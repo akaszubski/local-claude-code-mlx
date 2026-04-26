@@ -147,70 +147,93 @@ localclaude stop          # kills server, prefix cache lost
 
 ## Benchmarks
 
-Measured on this stack across past sessions. Numbers are pulled from live server logs and the [`vllm-mlx/docs/benchmarks/`](https://github.com/akaszubski/vllm-mlx/tree/main/docs/benchmarks) reference suite. Anything that's a design target rather than a measurement is flagged.
+> ### ⚠ Methodology and data quality caveats
+>
+> Numbers below come from two sources:
+> 1. **vllm-mlx upstream benchmark suite** — controlled, reproducible, multi-trial. Reasonably trustworthy.
+> 2. **Captured Claude Code session logs** (this stack, in normal use) — single observations under unknown concurrent load. **Treat as anecdotal**, not as paired A/B benchmarks. Conditions varied: some were on M3 Ultra running other workloads concurrently, some were measured during the early `coder-480` configuration before tuning settled.
+>
+> Anything in the "session-log captures" tables is marked with `(n=1)` or `(n=few, single session)`. The `coder-480` decode number especially is preliminary and likely lower than the model's true ceiling on a quiet M3 Ultra — it has not yet been re-benched on idle hardware.
+>
+> Re-running the harness with `bench/run.sh --conditions A,B,C,D,E --trials 5` on the target hardware will produce trustable numbers. We haven't done a clean cross-hardware pass yet.
 
-### Decode tokens/sec (single stream, small prompt)
+### Decode tokens/sec (vllm-mlx upstream benchmark suite)
+
+These come from `vllm-mlx/docs/benchmarks/llm.md` — multi-trial, controlled. Trustworthy.
 
 | Model | Quant | Hardware | Decode tok/s | TTFT (warm) |
 |---|---|---|---:|---:|
-| Qwen3-Coder-30B-A3B-Instruct (`coder` profile) | 4-bit | M4 Max 128 GB | **107–120** | ~70 ms |
-| Qwen3-30B-A3B-Instruct-2507 (`instruct`) | 4-bit | M4 Max 128 GB | **123–127** | ~127 ms |
-| Qwen3-Coder-480B-A35B (`coder-480`) | 4-bit | M3 Ultra 512 GB | **16–17** | (cold prefill is the killer — see below) |
-| Llama-3.2-3B-Instruct (reference) | 4-bit | M4 Max | 200 | 81 ms |
-| Qwen3-0.6B (reference) | 8-bit | M4 Max | 402 | 59 ms |
-| Nemotron-3-Nano-30B-A3B (reference) | 6-bit | M4 Max | 122 | 72 ms |
+| Qwen3-30B-A3B-Instruct-2507 (`instruct`) | 4-bit | M4 Max 128 GB | 123.9 | 127 ms |
+| Llama-3.2-3B-Instruct (reference) | 4-bit | M4 Max | 200.1 | 81 ms |
+| Qwen3-0.6B (reference) | 8-bit | M4 Max | 402.3 | 59 ms |
+| Qwen3-0.6B (reference) | 8-bit | M1 Max | 251.9 | 119 ms |
+| Nemotron-3-Nano-30B-A3B (reference) | 6-bit | M4 Max | 122.9 | 72 ms |
 
-### TTFT under real Claude Code traffic (the number that matters most for agent UX)
+### Decode tokens/sec (this stack — session log captures, anecdotal)
 
-| Model | Prompt size | Cache state | First-token latency |
-|---|---:|---|---:|
-| Qwen3-Coder-30B-A3B-4bit (M4 Max) | ~33 tok | warm cache | 70–400 ms |
-| Qwen3-Coder-30B-A3B-4bit (M4 Max) | 19,113 tok / 19,091 cached | prefix-cache **HIT** | **3.2 s** |
-| Qwen3-Coder-30B-A3B-4bit (M4 Max) | 4,694 new / 5K cached | partial hit | 5.2 s |
-| Qwen3-Coder-30B-A3B-4bit (M4 Max) | ~22K | **cold** (new project) | **30 s** |
-| Qwen3-Coder-480B-A35B-4bit (M3 Ultra) | 19,004 tok | cold | **95.8 s** |
-| Qwen3-Coder-480B-A35B-4bit (M3 Ultra) | 22,469 tok / 2,508 cached | mostly miss (project switch) | **117.4 s** |
+| Model | Quant | Hardware | Decode tok/s | n | Notes |
+|---|---|---|---:|---:|---|
+| Qwen3-Coder-30B-A3B-Instruct (`coder`) | 4-bit | M4 Max 128 GB | ~107–120 | few | Daily-driver observations; consistent across small/medium prompts |
+| Qwen3-Coder-480B-A35B (`coder-480`) | 4-bit | M3 Ultra 512 GB | ~16–17 ❓ | 1 | **Preliminary — likely understated**. Single observation under unknown concurrent load. The user has flagged this as suspect; needs re-bench on idle M3 Ultra |
 
-Takeaway: **prefix-cache hits drop TTFT by ~10×** on the 30B coder model (3.2 s vs 30 s). On the 480B model the cold-prefill penalty is so steep (~95–117 s) that the SSD-cache default and CLAUDE.md hygiene matter much more there than on smaller models.
+### TTFT under real Claude Code traffic (session log captures, n=1)
 
-### Continuous batching wins (M4 Max, vllm-mlx benchmark suite)
+These are individual log captures, not paired-trial measurements. Useful for "what does cold vs warm cache look like in practice" but don't quote them as benchmarks.
+
+| Model | Hardware | Prompt size | Cache state | TTFT (n=1) |
+|---|---|---:|---|---:|
+| Qwen3-Coder-30B-A3B-4bit | M4 Max | ~33 tok | warm | 70–400 ms |
+| Qwen3-Coder-30B-A3B-4bit | M4 Max | 19,113 / 19,091 cached | prefix-cache HIT | 3.2 s |
+| Qwen3-Coder-30B-A3B-4bit | M4 Max | 4,694 new / 5K cached | partial hit | 5.2 s |
+| Qwen3-Coder-30B-A3B-4bit | M4 Max | ~22K | cold (new project) | 30 s |
+| Qwen3-Coder-480B-A35B-4bit | M3 Ultra | 19,004 tok | cold | 95.8 s |
+| Qwen3-Coder-480B-A35B-4bit | M3 Ultra | 22,469 / 2,508 cached | project-switch (mostly miss) | 117.4 s |
+
+The directional pattern is real: prefix-cache hits give an order-of-magnitude TTFT reduction on the 30B model, and the cold-prefill penalty grows steeply with model size. The exact numbers are single-observation and conditions varied.
+
+### Continuous batching wins (vllm-mlx upstream benchmark suite, M4 Max)
+
+Multi-trial, controlled. Trustworthy.
 
 | Model | Single stream | 5-stream batch | Speedup |
 |---|---:|---:|---:|
-| Qwen3-30B-A3B-4bit | 98.1 tok/s | **233.3 tok/s** | 2.38× |
-| Llama-3.2-1B-Instruct-4bit | 299.1 | **613.0** | 2.05× |
-| Qwen3-0.6B-8bit | 328.1 | **1111.8** | 3.39× |
+| Qwen3-30B-A3B-4bit | 98.1 tok/s | 233.3 tok/s | 2.38× |
+| Llama-3.2-1B-Instruct-4bit | 299.1 | 613.0 | 2.05× |
+| Qwen3-0.6B-8bit | 328.1 | 1111.8 | 3.39× |
 
 Paged cache adds another ~1.1× on top of batching (681 → 766 tok/s, 20-req test).
 
-### Optimizer ON vs OFF (design target, not yet a controlled A/B)
+### Optimizer ON vs OFF (design target, NOT measured as paired A/B)
 
-| Configuration | Tools sent | First-turn prefill (claim) |
+| Configuration | Tools sent | First-turn prefill |
 |---|---:|---:|
-| Default `code` allowlist (33 tools, stubs on) | 33 | **~3 s** |
-| All MCP tools, no allowlist (~277 tools) | 277 | **~50 s for ~80K tokens** |
+| Default `code` allowlist (33 tools, stubs on) | 33 | ~3 s (claim) |
+| All MCP tools, no allowlist | ~277 | ~50 s (claim, for ~80K tokens) |
 
-⚠ **Caveat**: This is the documented design target derived from token-count math + log observations on Qwen3-Coder-30B-A3B-4bit. It is **not yet a controlled paired-trial measurement** in the bench harness. The closest direct measurement is the 30 s cold prefill at 22 K tokens above (Section 2).
+**Caveat**: design target derived from token-count math + log observations on Qwen3-Coder-30B-A3B-4bit. **Not** a controlled paired-trial measurement. The closest direct measurement is the 30 s cold prefill at 22 K tokens in the table above. The 50 s vs 3 s framing should be treated as "what we expect to see when we actually run the A/B" — not a measured result.
 
-### Cache configuration A/B (preliminary — small n)
+### Cache configuration A/B (`bench/run.sh`, preliminary — small n)
 
-From `bench/runs/20260426-151203/`. Wall-clock for `claude --print` round-trips. Caveats: trial counts 1–5 per cell, C/D mostly errored on cases 03/04 (root cause: missing test fixture at run-time, since fixed). Treat as directional only.
+From `bench/runs/20260426-151203/` and `20260426-213941/`. Wall-clock for `claude --print` round-trips. Trial counts 1-5 per cell. **Directional only — not enough trials to claim winners definitively.**
 
 | Cond | Case | first-call wall (ms) | repeat wall (ms) |
 |---|---|---:|---:|
 | A (baseline) | 02_cc_list_files | 10,579–44,592 | 26,355 |
-| B (+`--warm-prompts`) | 02_cc_list_files | 11,133–25,160 | **11,184** |
+| B (+`--warm-prompts`) | 02_cc_list_files | 11,133–25,160 | 11,184 |
 | C (+`--ssd-cache-dir`) | 02_cc_list_files | 46,767 | 27,699 |
 | D (+`--kv-cache-quantization`) | 02_cc_list_files | 30,424–46,817 | 27,919 |
+| C (+`--ssd-cache-dir`) | 03_cc_explain_readme | 26,025 | 7,906 |
 
-Cleanest signal: **`--warm-prompts` repeat wall 11.2 s vs baseline 26.4 s** (~2.4× faster), but n=1 — needs more trials to claim definitively. Re-run after the harness fix landed in `20260426-213941` confirmed C is functional and ~3× faster than baseline on `cc_explain_readme` (case 3) — see that summary file for details.
+The cleanest directional signals: `--warm-prompts` repeat-wall ~2.4× faster than baseline on case 02; `--ssd-cache-dir` ~3× faster than baseline on case 03 repeat. Both are single trials per cell and need re-running with `--trials 5+` before being load-bearing.
 
 ### What we have NOT measured (be honest)
 
-- No controlled optimizer-on vs optimizer-off TTFT comparison in the bench harness (the 50 s vs 3 s claim is design target, not paired A/B).
-- No per-quantization sweep on the same model (e.g. 4-bit vs 8-bit Qwen3-Coder-30B on identical hardware).
-- No wired-memory / RSS time series for the leak in [`vllm-mlx#442`](https://github.com/waybarrios/vllm-mlx/issues/442) — only point-in-time KV-cache MB readings from scheduler logs.
-- No MTP (`--enable-mtp`) numbers on `coder-next` / `qwen36` profiles. Bench condition E is wired but the run hasn't been done yet.
+- **No controlled optimizer-on vs optimizer-off A/B** in the bench harness. The 50 s vs 3 s claim is a design target, not a paired-trial measurement.
+- **No per-quantization sweep** on the same model (e.g. 4-bit vs 8-bit Qwen3-Coder-30B on identical hardware).
+- **No wired-memory / RSS time series** for the leak in [`vllm-mlx#442`](https://github.com/waybarrios/vllm-mlx/issues/442). Only point-in-time KV-cache MB readings from scheduler logs.
+- **No MTP (`--enable-mtp`) numbers** on `coder-next` / `qwen36` profiles. Bench condition E is wired but the run hasn't been done yet.
+- **No clean re-bench of `coder-480` on idle M3 Ultra.** The current 16-17 tok/s number is suspect (single observation under unknown concurrent load).
+- **No paired comparison across hardware** for the same model + same workload (would isolate hardware contribution).
 
 If you re-run the bench, results land in `bench/runs/<timestamp>/summary.md` and can be folded back into this section.
 
