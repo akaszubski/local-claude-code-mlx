@@ -564,9 +564,35 @@ localclaude status   # what's running + connect command + recent log lines
 | `~/.localclaude/.active` | Last-used profile config (read by `restart` / `cc` / `status`) |
 | `~/.localclaude/logs/<profile>.log` | Per-profile server logs |
 | `~/.localclaude/ssd-cache/` | (if enabled) persistent KV cache pages |
-| `~/.cache/huggingface/` | Model weights (handled by `huggingface_hub`) |
+| `~/Models/` | Model weights — canonical (set `HF_HUB_CACHE=$HOME/Models`) |
+| `~/.cache/huggingface/hub/` | Model weights — legacy fallback (`localclaude` reads both) |
+
+## Related repositories
+
+### Required (cloned by `install.sh`)
+
+| Repo | Role |
+|---|---|
+| [`akaszubski/vllm-mlx`](https://github.com/akaszubski/vllm-mlx) | The inference server — Apple Silicon fork with the optimizer / tool-stub / thinking-gate patches that make local Claude fast. **The install source.** |
+| [`akaszubski/localclaude`](https://github.com/akaszubski/localclaude) | Lifecycle wrapper — start/stop/status/restart, profile management, container auto-bring-up. |
+| [`akaszubski/searxng-mcp`](https://github.com/akaszubski/searxng-mcp) | Tiny MCP server giving Claude Code a `mcp__searxng__*` web-search tool backed by a local SearXNG container. |
+
+### Upstream (bug reports + tracking)
+
+| Repo | Role |
+|---|---|
+| [`waybarrios/vllm-mlx`](https://github.com/waybarrios/vllm-mlx) | Upstream of the vllm-mlx fork. File bugs here (the fork has issues disabled). The fork rebases on this regularly to pick up upstream fixes. |
+
+### Companion projects (same Apple-Silicon-LLM ecosystem, optional)
+
+These pair well with this stack but aren't dependencies — clone if you want them:
+
+| Repo | What it is |
+|---|---|
+| [`akaszubski/autonomous-dev`](https://github.com/akaszubski/autonomous-dev) | Claude Code 2.0 workflow framework — agents, hooks, `/implement` pipeline, plan-critic, etc. Useful if you want structured agent workflows on top of local Claude. The umbrella's recent feedback issues ([#977](https://github.com/akaszubski/autonomous-dev/issues/977), [#978](https://github.com/akaszubski/autonomous-dev/issues/978), [#979](https://github.com/akaszubski/autonomous-dev/issues/979)) live here. |
+| [`akaszubski/DeepResearch-MLX`](https://github.com/akaszubski/DeepResearch-MLX) | MLX port of Tongyi DeepResearch. Runs on the same vllm-mlx fork; gives you agentic deep-research alongside Claude Code. |
+| [`akaszubski/abliterator_mlx`](https://github.com/akaszubski/abliterator_mlx) | MLX port of abliterator. Niche local-LLM tooling for the same hardware target. |
 
 ## License
 
-Each component carries its own LICENSE file. `vllm-mlx`, `localclaude`, and
-`searxng-mcp` are Apache 2.0.
+Each component carries its own LICENSE file. The umbrella, `vllm-mlx`, `localclaude`, and `searxng-mcp` are all Apache 2.0.
