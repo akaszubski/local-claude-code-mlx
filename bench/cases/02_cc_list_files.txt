@@ -1,0 +1,1 @@
+List the files in this directory and tell me what kind of project this looks like.

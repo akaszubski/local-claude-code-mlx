@@ -1,0 +1,6 @@
+runs/
+cases/_capture/
+# User-captured Claude Code request — contains personal CLAUDE.md / MCP
+# inventory / home paths. Regenerate per machine via `bench/capture_seed.py
+# capture-start` (see bench/README.md "Step 0 walkthrough").
+cases/seed.warm.json

@@ -1,0 +1,23 @@
+# Sister components are independent git repos — committed via their own
+# remotes, not vendored here. Add them as submodules later if/when we want
+# pinned coordination across machines.
+localclaude/
+searxng-mcp/
+vllm-mlx/
+
+# Local logs and ad-hoc artefacts
+logs/
+*.log
+
+# Editor / OS
+.DS_Store
+*.swp
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/

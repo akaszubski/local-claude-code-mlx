@@ -1,0 +1,1 @@
+List Python files in this directory. Then for the first one, tell me how many lines it has. Then suggest one improvement.

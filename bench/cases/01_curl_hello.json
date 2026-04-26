@@ -1,0 +1,13 @@
+{
+  "name": "01_curl_hello",
+  "kind": "curl",
+  "warm": false,
+  "description": "Tiny prompt via /v1/messages, no tools. Pure prefill+decode baseline.",
+  "endpoint": "/v1/messages",
+  "body": {
+    "model": "PROFILE_MODEL",
+    "max_tokens": 64,
+    "temperature": 0,
+    "messages": [{"role": "user", "content": "Say hello in one short sentence."}]
+  }
+}
