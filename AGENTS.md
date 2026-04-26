@@ -20,7 +20,8 @@ If the user wants the model to confidently route web-research requests to `mcp__
 
 ## Do NOT
 
-- ❌ **Run `pip install vllm-mlx`** from PyPI. The local checkout (`vllm-mlx/`) carries fork patches that aren't on PyPI yet — the prompt optimizer (`818f3fcb`), tool stubs, and thinking-gate. Without them, prefill of an 80K-token Claude Code request takes ~50 s instead of ~3 s. The install script handles `pip install -e ./vllm-mlx` correctly; don't override it.
+- ❌ **Run `pip install vllm-mlx`** from PyPI. The required source is the [`akaszubski/vllm-mlx`](https://github.com/akaszubski/vllm-mlx) fork (not upstream `waybarrios/vllm-mlx`, not PyPI). The fork carries the prompt optimizer (`818f3fcb`), tool stubs (`ae25fb83`), and thinking-gate (`b680dc20`) patches. Without them, prefill of an 80K-token Claude Code request takes ~50 s instead of ~3 s — the local stack is unusable. The install script clones the fork and runs `pip install -e ./vllm-mlx`; don't override either part.
+- ❌ **Clone `waybarrios/vllm-mlx`** for the install. That's upstream — no patches. Only use it as the destination for bug reports.
 - ❌ **Try this on Linux or Intel Mac.** Apple Silicon + macOS only. The script bails clearly; don't try to "patch around" the bail.
 - ❌ **Skip the SearXNG container.** Without it, `mcp__searxng__*` tools fail and Claude Code falls back to no-op `WebSearch`. The default `code` allowlist references searxng MCP — disabling it without also changing the allowlist will leave the model trying to call missing tools.
 - ❌ **Improvise dependency versions.** Use what's pinned in the sister repos' setup files. If something seems wrong, file an issue rather than patching.

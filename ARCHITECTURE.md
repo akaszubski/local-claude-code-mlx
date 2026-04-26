@@ -6,7 +6,7 @@ How the four components fit together when you run `localclaude start coder` and 
 
 | Component | Repo | Role | Talks to |
 |---|---|---|---|
-| **vllm-mlx** | `waybarrios/vllm-mlx` | Inference server: `vllm-mlx serve …` exposes OpenAI `/v1/*` and Anthropic `/v1/messages` on `:8000`. Continuous batching, paged KV cache, prefix cache, optional SSD tier. | MLX/Metal kernels |
+| **vllm-mlx** | `akaszubski/vllm-mlx` (fork — required), branched from `waybarrios/vllm-mlx` (upstream — bug reports go here) | Inference server: `vllm-mlx serve …` exposes OpenAI `/v1/*` and Anthropic `/v1/messages` on `:8000`. Continuous batching, paged KV cache, prefix cache, optional SSD tier. **Install from the fork** — it carries the optimizer / tool-stub / thinking-gate patches that drop prefill from ~50s to ~3-5s. | MLX/Metal kernels |
 | **localclaude** | `akaszubski/localclaude` | Bash lifecycle wrapper: stop/start/status/restart, profile→model+parser resolution, auto-bring-up of the SearXNG container, port-8000 single-server invariant. | `vllm-mlx` (subprocess), `docker`/`orb` (CLI), `claude` (subprocess via `cc`) |
 | **searxng-mcp** | `akaszubski/searxng-mcp` | Tiny MCP server exposing `mcp__searxng__search` and `mcp__searxng__fetch` tools. Replaces Anthropic's server-side `WebSearch`, which no-ops against a local LLM. | SearXNG container on `:8080` |
 | **bench/** | (this repo) | A/B harness that drives realistic Claude Code traffic through the stack and measures wall-clock + TTFT under different cache configurations. | `localclaude` (subprocess) → everything below it |
@@ -148,7 +148,7 @@ claude renders the streamed response, dispatches tool calls
 
 The prefix cache + SSD tier amplify these wins: optimizer transforms produce a deterministic prefix, and the cache reuses it across turns and across server restarts.
 
-These patches are intended to land upstream (`waybarrios/vllm-mlx`); until they do, `pip install vllm-mlx` won't have them and the local checkout is mandatory.
+These patches are intended to land upstream (`waybarrios/vllm-mlx`); until they do, **the install source is the [`akaszubski/vllm-mlx`](https://github.com/akaszubski/vllm-mlx) fork** (not upstream, not `pip install vllm-mlx` from PyPI). The fork tracks upstream `main` and rebases regularly.
 
 ## The 3 (4) cache knobs
 
@@ -234,7 +234,7 @@ The cost is one extra `pip install -e .` at setup time. The benefit is that you 
 
 ## Why this layout instead of one repo?
 
-- **vllm-mlx** is upstream (waybarrios/vllm-mlx) — we want to track its main branch and contribute upstream, not vendor a fork.
+- **vllm-mlx** is a fork (`akaszubski/vllm-mlx`, branched from upstream `waybarrios/vllm-mlx`) — install source is the fork (it carries the optimizer / tool-stub / thinking-gate patches), bug-report destination is upstream. The fork rebases on upstream regularly so we get upstream fixes without vendoring stale code.
 - **localclaude** is independently useful (anyone running vllm-mlx with Claude Code can use it without searxng-mcp or this umbrella) and changes infrequently.
 - **searxng-mcp** is a generic MCP server that other people's Claude Code setups might want — it doesn't depend on vllm-mlx.
 - **This umbrella** holds the cross-component things: the architectural README you're reading, the `bench/` harness that needs all three, and decisions about how they fit together.

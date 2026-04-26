@@ -8,9 +8,11 @@ keys, no rate limits.
 
 ## What's in this umbrella
 
+> **⚠ Important about vllm-mlx**: this stack installs from the **`akaszubski/vllm-mlx` fork**, not upstream `waybarrios/vllm-mlx` or `pip install vllm-mlx` from PyPI. The fork carries the prompt optimizer, tool-stubbing, and thinking-gate patches that turn ~50s prefill into ~3-5s on an 80K-token Claude Code request. Without these patches the local stack is barely usable. Bug reports go to upstream (`waybarrios/vllm-mlx`); installs come from the fork. See the "vllm-mlx fork patches" section below for details.
+
 | Component | Repo | What it is |
 |---|---|---|
-| [`vllm-mlx/`](https://github.com/waybarrios/vllm-mlx) | upstream + fork | The inference server. vLLM-style continuous batching + paged KV cache + prefix cache + SSD tiering on Metal. Exposes OpenAI `/v1/*` and Anthropic `/v1/messages` from one process. **Use the local source checkout** — the fork carries the prompt optimizer, tool stubs, and thinking-gate patches that make local Claude actually fast (see "vllm-mlx fork patches" below). |
+| [`vllm-mlx/`](https://github.com/akaszubski/vllm-mlx) | **fork — required** | The inference server. vLLM-style continuous batching + paged KV cache + prefix cache + SSD tiering on Metal. Exposes OpenAI `/v1/*` and Anthropic `/v1/messages` from one process. The fork ([akaszubski/vllm-mlx](https://github.com/akaszubski/vllm-mlx), branched off [waybarrios/vllm-mlx](https://github.com/waybarrios/vllm-mlx)) is what makes local Claude fast — see "vllm-mlx fork patches" below. |
 | [`localclaude/`](https://github.com/akaszubski/localclaude) | own repo | Single-command lifecycle wrapper. Boots `vllm-mlx` with the right model + tool parser per profile, prints the `claude` connect command, manages stop/restart/status. Auto-starts the SearXNG container. |
 | [`searxng-mcp/`](https://github.com/akaszubski/searxng-mcp) | own repo | Tiny MCP server that gives Claude Code a `mcp__searxng__search` tool backed by a local SearXNG container. Replaces Anthropic's server-side `WebSearch` (which no-ops against local LLMs). |
 | [`bench/`](bench/) | this repo | A/B harness that measures wall-clock + TTFT under realistic Claude Code traffic across five cache configurations (baseline / `--warm-prompts` / `+--ssd-cache-dir` / `+--kv-cache-quantization` / `+--enable-mtp`). |
@@ -76,7 +78,8 @@ If you want to step through it yourself or you're on a non-standard layout:
 ```bash
 mkdir -p ~/Dev/local-claude-code-mlx && cd ~/Dev/local-claude-code-mlx
 git clone https://github.com/akaszubski/local-claude-code-mlx.git .
-git clone https://github.com/waybarrios/vllm-mlx.git
+# vllm-mlx: clone the FORK, not upstream — see warning above
+git clone https://github.com/akaszubski/vllm-mlx.git
 git clone https://github.com/akaszubski/localclaude.git
 git clone https://github.com/akaszubski/searxng-mcp.git
 ```
@@ -282,10 +285,9 @@ These are all upstream `waybarrios/vllm-mlx` issues; track them there for fix pr
 
 ## vllm-mlx fork patches (the reason this is fast)
 
-`localclaude` always runs the **local source checkout** of `vllm-mlx`, not the
-PyPI build. The fork (currently at `akaszubski/vllm-mlx`, branched off
-`waybarrios/vllm-mlx`) carries five patches that aren't upstream yet — and
-they're the difference between *barely usable* and *fast* local Claude:
+> **TL;DR**: the [`akaszubski/vllm-mlx`](https://github.com/akaszubski/vllm-mlx) fork is **mandatory** for usable local Claude performance. It's not optional, not "nice to have", not "for advanced users". Without it (running upstream `waybarrios/vllm-mlx` or PyPI `pip install vllm-mlx`), prefill of an 80K-token Claude Code request takes ~50s instead of ~3-5s. The install script clones the fork; don't override.
+
+The fork ([`akaszubski/vllm-mlx`](https://github.com/akaszubski/vllm-mlx), branched off [`waybarrios/vllm-mlx`](https://github.com/waybarrios/vllm-mlx)) carries five patches that aren't upstream yet — they're the difference between *barely usable* and *fast* local Claude:
 
 | Patch | Commit | Flag(s) | Why it matters |
 |---|---|---|---|

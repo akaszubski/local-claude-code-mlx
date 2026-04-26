@@ -181,7 +181,13 @@ clone_if_missing() {
     fi
 }
 
-clone_if_missing https://github.com/waybarrios/vllm-mlx.git    "$VLLM_MLX_DIR"    vllm-mlx
+# vllm-mlx: clone the AKASZUBSKI FORK, not upstream waybarrios. The fork
+# carries the prompt optimizer, tool-stubbing, and thinking-gate patches
+# (commits 818f3fcb / b680dc20 / ae25fb83). Without these, prefill of an
+# 80K-token Claude Code request is ~50s instead of ~3-5s — unusable.
+# The fork tracks upstream and rebases regularly; we file bugs upstream
+# at waybarrios/vllm-mlx but install from the fork.
+clone_if_missing https://github.com/akaszubski/vllm-mlx.git    "$VLLM_MLX_DIR"    "vllm-mlx (fork — required for optimizer patches)"
 clone_if_missing https://github.com/akaszubski/localclaude.git "$LOCALCLAUDE_DIR" localclaude
 clone_if_missing https://github.com/akaszubski/searxng-mcp.git "$SEARXNG_MCP_DIR" searxng-mcp
 

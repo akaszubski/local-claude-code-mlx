@@ -31,7 +31,9 @@ Initial public release. Establishes the umbrella as its own git repo and consoli
 
 ### vllm-mlx fork patches (the actual reason this stack is fast)
 
-`localclaude` always runs the **local source checkout** of `vllm-mlx`, not the PyPI build. The fork (currently `akaszubski/vllm-mlx`, branched from `waybarrios/vllm-mlx`) carries five patches that aren't upstream yet. They turn ~50s prefill into ~3-5s prefill on an 80K-token Claude Code request — without them the local stack is barely usable.
+The install source is the **[`akaszubski/vllm-mlx`](https://github.com/akaszubski/vllm-mlx) fork** (branched from upstream [`waybarrios/vllm-mlx`](https://github.com/waybarrios/vllm-mlx)). `pip install vllm-mlx` from PyPI is **wrong**; cloning upstream waybarrios is **wrong**. Only the fork has the patches. The fork rebases on upstream regularly so we don't lose upstream fixes.
+
+This carries five patches that aren't upstream yet. They turn ~50s prefill into ~3-5s prefill on an 80K-token Claude Code request — without them the local stack is barely usable.
 
 | Patch | Commit | Flag(s) | What it does |
 |---|---|---|---|
