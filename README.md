@@ -38,16 +38,40 @@ keys, no rate limits.
 
 ## First-time setup
 
-You only do this once per machine.
+### Recommended: one script does it all
 
-### 1. Hardware / OS prereqs
+```bash
+git clone https://github.com/akaszubski/local-claude-code-mlx.git ~/Dev/local-claude-code-mlx
+cd ~/Dev/local-claude-code-mlx
+./install.sh
+```
+
+`install.sh` is **Mac-only** and idempotent — safe to re-run. It walks through 8 phases:
+
+1. Pre-flight: verifies macOS + Apple Silicon + RAM.
+2. System deps: checks/installs `git`, `python3`, `claude` CLI, OrbStack via Homebrew. (You need Homebrew already — `https://brew.sh`.)
+3. Clones sister repos (`vllm-mlx`, `localclaude`, `searxng-mcp`) into umbrella siblings.
+4. Python deps: `pip install -e ./vllm-mlx`, plus a dedicated `searxng-mcp/.venv` with `mcp` + `httpx`.
+5. Starts the OrbStack engine and brings up the `localclaude-searxng` container.
+6. Registers `searxng` MCP server with Claude Code (`claude mcp add`).
+7. Appends a `PATH` line to your shell rc so `localclaude` is callable from anywhere (prompts before editing).
+8. Runs `localclaude doctor` to verify everything's healthy.
+
+Flags: `--yes` (auto-confirm prompts), `--no-path` (skip shell rc edit), `--no-mcp` (skip MCP registration), `--dry-run` (show what would happen, change nothing). `./install.sh --help` for details.
+
+### Manual setup (if you'd rather)
+
+If you want to step through it yourself or you're on a non-standard layout:
+
+<details>
+<summary>Show manual steps</summary>
+
+#### Hardware / OS prereqs
 
 - Apple Silicon Mac (M1+). Recommended ≥32 GB RAM for `coder` profile, ≥64 GB for `coder-next` 8-bit, ≥256 GB for `coder-480`.
 - macOS 14+.
 
-### 2. Clone the umbrella + sister repos
-
-The sister components are independent git repos — clone them as siblings of this umbrella:
+#### Clone the umbrella + sister repos
 
 ```bash
 mkdir -p ~/Dev/local-claude-code-mlx && cd ~/Dev/local-claude-code-mlx
@@ -57,53 +81,45 @@ git clone https://github.com/akaszubski/localclaude.git
 git clone https://github.com/akaszubski/searxng-mcp.git
 ```
 
-After this, `localclaude` (the bash script) auto-resolves all sister paths from its own location — no env vars needed unless you've moved things.
+After this, `localclaude` auto-resolves all sister paths from its own location — no env vars needed unless you've moved things.
 
-### 3. Install dependencies
+#### Install dependencies
 
 ```bash
 # Inference server — use the local checkout (carries optimizer + thinking-gate
 # patches that ship before they reach PyPI):
 cd vllm-mlx && pip install -e . && cd ..
 
-# Claude Code CLI:
-brew install claude   # or however you install it
-
-# OrbStack (provides docker engine for the SearXNG container — Docker Desktop
-# also works):
-brew install orbstack
-orb start    # ensure the engine is up
+# Claude Code CLI + OrbStack:
+brew install claude
+brew install --cask orbstack
+orb start
 ```
 
-### 3. Bring up SearXNG (web search backend)
+#### Bring up SearXNG (web search backend)
 
 ```bash
-cd searxng-mcp
-docker compose up -d
-# Verifies:
+cd searxng-mcp && docker compose up -d
 curl -sf http://127.0.0.1:8080/ >/dev/null && echo "SearXNG up"
 ```
 
-Container is named `localclaude-searxng` with `restart: unless-stopped`, so it
-auto-comes-back after reboots once OrbStack is running.
+Container is named `localclaude-searxng` with `restart: unless-stopped`, so it auto-comes-back after reboots once OrbStack is running.
 
-### 4. Register the MCP server with Claude Code
+#### Register the MCP server with Claude Code
 
 ```bash
-claude mcp add searxng -- $(pwd)/run.sh
+claude mcp add searxng -- $(pwd)/run.sh   # from inside searxng-mcp/
 ```
 
-(Run from inside `searxng-mcp/`.) Restart Claude Code; the model will now see
-`mcp__searxng__search` and `mcp__searxng__fetch`.
-
-### 5. Put `localclaude` on your PATH
+#### Put `localclaude` on your PATH
 
 ```bash
-echo "export PATH=$(pwd)/localclaude:\$PATH" >> ~/.zshrc
-source ~/.zshrc
+echo 'export PATH="'"$(pwd)"'/localclaude:$PATH"' >> ~/.zshrc && source ~/.zshrc
 ```
 
 (Run from the umbrella root.)
+
+</details>
 
 ## Daily flow
 
@@ -125,6 +141,30 @@ When done:
 localclaude stop          # kills server, prefix cache lost
 # Or just leave it running — keeps the prefix cache warm.
 ```
+
+## Keep your CLAUDE.md files lean
+
+Claude Code embeds two CLAUDE.md files in **every** request's system prompt:
+- **Global**: `~/.claude/CLAUDE.md` — sent on every request from every project.
+- **Project**: `./CLAUDE.md` (per repo) — sent on every request from that project.
+
+Both are inside the cacheable prefix that vllm-mlx's prefix cache hashes. **Each token you add costs you twice**:
+
+1. **Prefill cost**: every fresh request pays for those tokens at prefill speed (slow for cold starts).
+2. **Cache invalidation across projects**: switching projects means a different `./CLAUDE.md` content → different prefix → cache miss → ~95–117s cold prefill on Qwen3-Coder-480B in our testing. The bigger your CLAUDE.mds, the more tokens cache-miss when you switch.
+
+Practical guidance from our profiling:
+
+| Do | Don't |
+|---|---|
+| Keep global `~/.claude/CLAUDE.md` under ~2 KB. Personal preferences only. | Dump every workflow rule, framework, philosophy doc in there. It's sent with every request, everywhere. |
+| Keep project `./CLAUDE.md` under ~3 KB. Truly project-specific facts only (build command, test runner, deploy quirks). | Mirror your README into CLAUDE.md. Claude can `Read` files on demand. |
+| Use sub-docs (`docs/*.md`) for deep reference and let Claude pull them when needed. | Keep "future plans" or "TODO" sections in CLAUDE.md. They invalidate the cache and aren't actionable. |
+| Audit periodically: `wc -c ~/.claude/CLAUDE.md ./CLAUDE.md`. | Forget global CLAUDE.md exists. It's the easiest one to bloat. |
+
+If you want a precise breakdown of where your prefix tokens are going, the upstream issue [`autonomous-dev#979`](https://github.com/akaszubski/autonomous-dev/issues/979) tracks an `audit-context` command for this.
+
+Note also that **MCP server tool definitions dwarf CLAUDE.md** in most setups — the optimizer's tool allowlist (above) is the bigger lever. CLAUDE.md hygiene is the second-biggest.
 
 ## ⚠ Operational caveats (read before exposing this beyond loopback)
 
