@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install.sh — one-shot setup for the local-claude-code-mlx stack.
+# install.sh -- one-shot setup for the local-claude-code-mlx stack.
 #
 # Mac-only. Brings up the full stack:
 #   1. Verifies Apple Silicon + macOS
@@ -44,8 +44,8 @@ ask()     {
 }
 maybe()   {  # echo + execute (or just echo in dry-run)
     # Each caller passes a single shell-syntax string (so we can express
-    # subshells like `(cd … && …)`). Joining with $* keeps shellcheck happy
-    # on SC2294 — eval-ing $@ would negate the benefit of args arrays, but
+    # subshells like `(cd ... && ...)`). Joining with $* keeps shellcheck happy
+    # on SC2294 -- eval-ing $@ would negate the benefit of args arrays, but
     # we genuinely want string-eval semantics here.
     if [[ "$DRY_RUN" == "1" ]]; then
         echo "    ${DIM}\$ $*${RESET}"
@@ -80,9 +80,9 @@ LOCALCLAUDE_DIR="$UMBRELLA/localclaude"
 SEARXNG_MCP_DIR="$UMBRELLA/searxng-mcp"
 
 echo
-echo "${BOLD}local-claude-code-mlx — install${RESET}"
+echo "${BOLD}local-claude-code-mlx -- install${RESET}"
 echo "${DIM}umbrella: $UMBRELLA${RESET}"
-[[ "$DRY_RUN" == "1" ]] && echo "${YELLOW}dry-run mode — no changes will be made${RESET}"
+[[ "$DRY_RUN" == "1" ]] && echo "${YELLOW}dry-run mode -- no changes will be made${RESET}"
 echo
 
 # ── 1. Pre-flight: macOS + Apple Silicon ────────────────────────────
@@ -96,7 +96,7 @@ ok "Apple Silicon (arm64)"
 
 macos_major=$(sw_vers -productVersion | cut -d. -f1)
 if (( macos_major < 14 )); then
-    warn "macOS $macos_major detected — recommend 14+. Continuing anyway."
+    warn "macOS $macos_major detected -- recommend 14+. Continuing anyway."
 else
     ok "macOS $(sw_vers -productVersion)"
 fi
@@ -104,7 +104,7 @@ fi
 ram_gb=$(($(sysctl -n hw.memsize) / 1024 / 1024 / 1024))
 ok "$ram_gb GB RAM"
 if (( ram_gb < 32 )); then
-    warn "Less than 32 GB RAM — only 'instruct' / 'qwen36' / 'gemma4' profiles likely to fit. coder/coder-next need 32+."
+    warn "Less than 32 GB RAM -- only 'instruct' / 'qwen36' / 'gemma4' profiles likely to fit. coder/coder-next need 32+."
 fi
 
 # ── 2. System deps ──────────────────────────────────────────────────
@@ -125,7 +125,7 @@ ok "git $(git --version | awk '{print $3}')"
 
 # Required: python3.10+
 if ! command -v python3 >/dev/null 2>&1; then
-    warn "python3 missing — installing via brew"
+    warn "python3 missing -- installing via brew"
     maybe "brew install python@3.12"
 fi
 py_version=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
@@ -135,7 +135,7 @@ ok "python3 $py_version"
 
 # Required: claude CLI
 if ! command -v claude >/dev/null 2>&1; then
-    warn "claude CLI missing — installing via brew"
+    warn "claude CLI missing -- installing via brew"
     maybe "brew install claude"
 else
     ok "claude $(claude --version 2>&1 | head -1 | awk '{print $1}')"
@@ -143,7 +143,7 @@ fi
 
 # Required: orbstack (provides docker engine for searxng container)
 if ! command -v orb >/dev/null 2>&1; then
-    warn "OrbStack missing — installing via brew (cask)"
+    warn "OrbStack missing -- installing via brew (cask)"
     maybe "brew install --cask orbstack"
     warn "OrbStack installed. You may need to launch it once from Applications to complete setup."
 else
@@ -152,7 +152,7 @@ fi
 
 # Required: docker CLI (provided by orbstack)
 if ! command -v docker >/dev/null 2>&1; then
-    warn "docker CLI not on PATH — OrbStack should add it. Restart your shell after install."
+    warn "docker CLI not on PATH -- OrbStack should add it. Restart your shell after install."
 else
     ok "docker on PATH"
 fi
@@ -173,9 +173,9 @@ clone_if_missing() {
     if [[ -d "$dir/.git" ]]; then
         ok "$name already cloned ($dir)"
     elif [[ -d "$dir" ]]; then
-        warn "$name dir exists but is not a git repo — leaving it alone: $dir"
+        warn "$name dir exists but is not a git repo -- leaving it alone: $dir"
     else
-        echo "  cloning $name…"
+        echo "  cloning $name..."
         maybe "git clone --depth 1 '$url' '$dir'"
         ok "$name cloned"
     fi
@@ -184,10 +184,10 @@ clone_if_missing() {
 # vllm-mlx: clone the AKASZUBSKI FORK, not upstream waybarrios. The fork
 # carries the prompt optimizer, tool-stubbing, and thinking-gate patches
 # (commits 818f3fcb / b680dc20 / ae25fb83). Without these, prefill of an
-# 80K-token Claude Code request is ~50s instead of ~3-5s — unusable.
+# 80K-token Claude Code request is ~50s instead of ~3-5s -- unusable.
 # The fork tracks upstream and rebases regularly; we file bugs upstream
 # at waybarrios/vllm-mlx but install from the fork.
-clone_if_missing https://github.com/akaszubski/vllm-mlx.git    "$VLLM_MLX_DIR"    "vllm-mlx (fork — required for optimizer patches)"
+clone_if_missing https://github.com/akaszubski/vllm-mlx.git    "$VLLM_MLX_DIR"    "vllm-mlx (fork -- required for optimizer patches)"
 clone_if_missing https://github.com/akaszubski/localclaude.git "$LOCALCLAUDE_DIR" localclaude
 clone_if_missing https://github.com/akaszubski/searxng-mcp.git "$SEARXNG_MCP_DIR" searxng-mcp
 
@@ -199,7 +199,7 @@ step "4/8  Python dependencies"
 if python3 -c "import vllm_mlx" 2>/dev/null && [[ "$(python3 -c 'import vllm_mlx, os; print(os.path.dirname(vllm_mlx.__file__))')" == "$VLLM_MLX_DIR/vllm_mlx" ]]; then
     ok "vllm-mlx already installed editable from $VLLM_MLX_DIR"
 else
-    echo "  installing vllm-mlx editable from local source (this pulls deps and may take a few minutes)…"
+    echo "  installing vllm-mlx editable from local source (this pulls deps and may take a few minutes)..."
     maybe "python3 -m pip install --quiet -e '$VLLM_MLX_DIR'"
     ok "vllm-mlx installed editable"
 fi
@@ -208,7 +208,7 @@ fi
 if [[ -x "$SEARXNG_MCP_DIR/.venv/bin/python" ]] && "$SEARXNG_MCP_DIR/.venv/bin/python" -c "import mcp, httpx" 2>/dev/null; then
     ok "searxng-mcp venv ready ($SEARXNG_MCP_DIR/.venv)"
 else
-    echo "  creating searxng-mcp venv + installing mcp + httpx…"
+    echo "  creating searxng-mcp venv + installing mcp + httpx..."
     maybe "python3 -m venv '$SEARXNG_MCP_DIR/.venv'"
     maybe "'$SEARXNG_MCP_DIR/.venv/bin/pip' install --quiet mcp httpx"
     ok "searxng-mcp venv created"
@@ -222,7 +222,7 @@ if [[ "$NO_CONTAINER" == "1" ]]; then
     warn "skipped (--no-container)"
 elif ! docker info >/dev/null 2>&1; then
     if command -v orb >/dev/null 2>&1; then
-        echo "  starting OrbStack engine…"
+        echo "  starting OrbStack engine..."
         maybe "orb start"
         sleep 3
         if ! docker info >/dev/null 2>&1; then
@@ -245,18 +245,18 @@ if [[ "$NO_CONTAINER" != "1" ]] && docker info >/dev/null 2>&1; then
             ok "localclaude-searxng container already running"
             ;;
         missing)
-            echo "  bringing up localclaude-searxng container…"
+            echo "  bringing up localclaude-searxng container..."
             maybe "(cd '$SEARXNG_MCP_DIR' && docker compose up -d)"
             ok "container created"
             ;;
         exited|created|dead)
-            warn "localclaude-searxng exists but is in state '$cstate' — recreating"
+            warn "localclaude-searxng exists but is in state '$cstate' -- recreating"
             maybe "docker rm -f localclaude-searxng"
             maybe "(cd '$SEARXNG_MCP_DIR' && docker compose up -d)"
             ok "container recreated"
             ;;
         *)
-            warn "container in unexpected state '$cstate' — leaving alone"
+            warn "container in unexpected state '$cstate' -- leaving alone"
             ;;
     esac
 
@@ -282,7 +282,7 @@ step "6/8  Register searxng MCP with Claude Code"
 if [[ "$NO_MCP" == "1" ]]; then
     warn "skipped (--no-mcp)"
 elif ! command -v claude >/dev/null 2>&1; then
-    warn "claude CLI missing — skipping MCP registration"
+    warn "claude CLI missing -- skipping MCP registration"
 elif claude mcp list 2>/dev/null | grep -qi searxng; then
     ok "searxng MCP already registered"
 else
@@ -290,7 +290,7 @@ else
         maybe "claude mcp add searxng -- '$SEARXNG_MCP_DIR/run.sh'"
         ok "searxng MCP registered"
     else
-        warn "skipped — register later with:"
+        warn "skipped -- register later with:"
         echo "    claude mcp add searxng -- $SEARXNG_MCP_DIR/run.sh"
     fi
 fi
@@ -312,7 +312,7 @@ else
     esac
 
     if [[ -z "$rc" ]]; then
-        warn "Unrecognised shell ($SHELL) — add this to your shell rc manually:"
+        warn "Unrecognised shell ($SHELL) -- add this to your shell rc manually:"
         echo "    export PATH=\"$LOCALCLAUDE_DIR:\$PATH\""
     elif grep -qF "$LOCALCLAUDE_DIR" "$rc" 2>/dev/null; then
         ok "$rc already references $LOCALCLAUDE_DIR"
@@ -320,9 +320,9 @@ else
         maybe "echo '' >> '$rc'"
         maybe "echo '# local-claude-code-mlx' >> '$rc'"
         maybe "echo 'export PATH=\"$LOCALCLAUDE_DIR:\$PATH\"' >> '$rc'"
-        ok "added to $rc — open a new shell or run: source $rc"
+        ok "added to $rc -- open a new shell or run: source $rc"
     else
-        warn "skipped — add this to $rc when ready:"
+        warn "skipped -- add this to $rc when ready:"
         echo "    export PATH=\"$LOCALCLAUDE_DIR:\$PATH\""
     fi
 fi
