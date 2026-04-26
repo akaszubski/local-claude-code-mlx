@@ -1,0 +1,87 @@
+name: install.sh fresh-Mac test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'install.sh'
+      - '.github/workflows/install-test.yml'
+  pull_request:
+    paths:
+      - 'install.sh'
+  workflow_dispatch:
+
+jobs:
+  install-fresh-mac:
+    name: install.sh on macos-${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [14, 15]
+    runs-on: macos-${{ matrix.os }}
+
+    steps:
+      - name: Check out umbrella
+        uses: actions/checkout@v4
+
+      - name: Show runner identity
+        run: |
+          echo "OS: $(sw_vers -productVersion)"
+          echo "Arch: $(uname -m)"
+          echo "RAM: $(($(sysctl -n hw.memsize) / 1024 / 1024 / 1024)) GB"
+          brew --version | head -1
+
+      - name: Static analysis (shellcheck)
+        run: |
+          brew install shellcheck
+          shellcheck install.sh
+
+      - name: Dry-run (no side effects)
+        run: ./install.sh --dry-run --yes --no-mcp --no-path --no-container
+
+      - name: Real install (no MCP, no PATH, no container)
+        # --no-mcp: claude CLI isn't authenticated in CI
+        # --no-path: don't write to runner's shell rc
+        # --no-container: OrbStack is a desktop app; testing that on a CI VM
+        #   is brittle. The dep + clone + pip phases are the high-value ones.
+        run: ./install.sh --yes --no-mcp --no-path --no-container
+
+      - name: Verify the bits we did install
+        run: |
+          set -e
+
+          # Sister repos cloned
+          test -d vllm-mlx/.git    || (echo "vllm-mlx not cloned" && exit 1)
+          test -d localclaude/.git || (echo "localclaude not cloned" && exit 1)
+          test -d searxng-mcp/.git || (echo "searxng-mcp not cloned" && exit 1)
+
+          # vllm-mlx import resolves to local source
+          py_path=$(python3 -c 'import vllm_mlx, os; print(os.path.dirname(vllm_mlx.__file__))')
+          expected="$PWD/vllm-mlx/vllm_mlx"
+          if [[ "$py_path" != "$expected" ]]; then
+            echo "vllm-mlx import path wrong: got $py_path, expected $expected"
+            exit 1
+          fi
+
+          # searxng-mcp venv has the right deps
+          ./searxng-mcp/.venv/bin/python -c "import mcp, httpx" \
+            || (echo "searxng-mcp venv missing deps" && exit 1)
+
+          # localclaude script is executable + valid
+          test -x localclaude/localclaude || (echo "localclaude not executable" && exit 1)
+          bash -n localclaude/localclaude || (echo "localclaude has syntax errors" && exit 1)
+
+          # CLI works
+          localclaude/localclaude -h > /dev/null
+
+          echo "All post-install checks passed."
+
+      - name: Report disk usage (info only)
+        if: always()
+        run: |
+          echo "=== umbrella tree size ==="
+          du -sh . 2>/dev/null || true
+          echo "=== sister repo sizes ==="
+          du -sh vllm-mlx localclaude searxng-mcp 2>/dev/null || true
+          echo "=== pip site-packages ==="
+          python3 -c "import sysconfig; print(sysconfig.get_paths()['purelib'])"

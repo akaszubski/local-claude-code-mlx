@@ -17,8 +17,9 @@
 #   ./install.sh             # interactive (prompts before .zshrc edit)
 #   ./install.sh --yes       # auto-confirm all prompts
 #   ./install.sh --no-path   # don't touch shell rc
-#   ./install.sh --no-mcp    # don't register searxng MCP with claude
-#   ./install.sh --dry-run   # show what would happen, change nothing
+#   ./install.sh --no-mcp        # don't register searxng MCP with claude
+#   ./install.sh --no-container  # skip OrbStack + SearXNG container (CI mode)
+#   ./install.sh --dry-run       # show what would happen, change nothing
 
 set -euo pipefail
 
@@ -53,14 +54,16 @@ maybe()   {  # echo + execute (or just echo in dry-run)
 AUTO_YES=0
 NO_PATH=0
 NO_MCP=0
+NO_CONTAINER=0
 DRY_RUN=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --yes|-y)    AUTO_YES=1; shift ;;
-        --no-path)   NO_PATH=1; shift ;;
-        --no-mcp)    NO_MCP=1; shift ;;
-        --dry-run)   DRY_RUN=1; shift ;;
-        -h|--help)   sed -n '2,18p' "$0" | sed 's/^# \?//'; exit 0 ;;
+        --yes|-y)        AUTO_YES=1; shift ;;
+        --no-path)       NO_PATH=1; shift ;;
+        --no-mcp)        NO_MCP=1; shift ;;
+        --no-container)  NO_CONTAINER=1; shift ;;
+        --dry-run)       DRY_RUN=1; shift ;;
+        -h|--help)       sed -n '2,18p' "$0" | sed 's/^# \?//'; exit 0 ;;
         *) fatal "unknown option: $1 (try --help)" ;;
     esac
 done
@@ -205,8 +208,9 @@ fi
 echo
 step "5/8  SearXNG container"
 
-# Engine
-if ! docker info >/dev/null 2>&1; then
+if [[ "$NO_CONTAINER" == "1" ]]; then
+    warn "skipped (--no-container)"
+elif ! docker info >/dev/null 2>&1; then
     if command -v orb >/dev/null 2>&1; then
         echo "  starting OrbStack engine…"
         maybe "orb start"
@@ -224,7 +228,7 @@ else
 fi
 
 # Container
-if docker info >/dev/null 2>&1; then
+if [[ "$NO_CONTAINER" != "1" ]] && docker info >/dev/null 2>&1; then
     cstate=$(docker inspect -f '{{.State.Status}}' localclaude-searxng 2>/dev/null || echo "missing")
     case "$cstate" in
         running)

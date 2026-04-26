@@ -4,7 +4,7 @@ Run **Claude Code** against a **local Qwen** model on Apple Silicon, with real
 web research and an A/B benchmark harness for cache tuning. No cloud, no API
 keys, no rate limits.
 
-**Read also**: [ARCHITECTURE.md](ARCHITECTURE.md) for technical layout and request flow · [CHANGELOG.md](CHANGELOG.md) for what's in this version and why.
+**Read also**: [ARCHITECTURE.md](ARCHITECTURE.md) for technical layout and request flow · [CHANGELOG.md](CHANGELOG.md) for what's in this version and why · [AGENTS.md](AGENTS.md) if you're an AI agent installing or modifying this stack.
 
 ## What's in this umbrella
 
