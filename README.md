@@ -124,6 +124,68 @@ echo 'export PATH="'"$(pwd)"'/localclaude:$PATH"' >> ~/.zshrc && source ~/.zshrc
 
 </details>
 
+## Model storage
+
+**Recommended location: `~/Models/`** (set `HF_HUB_CACHE=$HOME/Models` in your shell rc).
+
+Why not the HuggingFace default (`~/.cache/huggingface/hub/`)?
+
+- `.cache/` is treated as evictable by some macOS tools (Storage cleanup, third-party "free up disk" utilities) — your 17 GB+ models can vanish.
+- A dedicated `~/Models/` directory is easier to back up, exclude from Time Machine, or symlink to an external SSD.
+- Cleaner separation between model weights (intentional 250+ GB) and other tool caches (transient).
+
+`localclaude` natively recognises both locations via `_is_model_cached()` (checks `$HOME/Models` first, falls back to `$HOME/.cache/huggingface/hub/`), so you don't need to migrate existing downloads — just point new ones at `~/Models/`.
+
+Set it once:
+
+```bash
+mkdir -p ~/Models
+echo 'export HF_HUB_CACHE="$HOME/Models"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+To put models on an external SSD instead:
+
+```bash
+echo 'export HF_HUB_CACHE="/Volumes/MyExternalSSD/Models"' >> ~/.zshrc
+```
+
+| Profile | HF model | On-disk | Loaded RAM | Notes |
+|---|---|---:|---:|---|
+| `coder` | `mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit` | ~17 GB | ~17 GB | Daily driver. |
+| `coder-next` | `lmstudio-community/Qwen3-Coder-Next-MLX-8bit` | ~32 GB | ~32 GB | Top SWE-bench Pass@5; needs ≥64 GB RAM. |
+| `coder-480` | `mlx-community/Qwen3-Coder-480B-A35B-Instruct-4bit` | ~250 GB | ~250 GB | Auto-routes via SSH if local Mac doesn't have weights cached (set `LOCALCLAUDE_CODER_480_REMOTE=user@host`). |
+| `instruct` | `mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit` | ~17 GB | ~17 GB | General-purpose MoE baseline. |
+| `qwen36` | `mlx-community/Qwen3.6-35B-A3B-4bit` | ~20 GB | ~20 GB | Newest; beats Gemma 4 on most evals. |
+| `gemma4` | `mlx-community/gemma-4-31b-it-4bit` | ~18 GB | ~18 GB | ⚠ Currently broken under continuous batching ([vllm-mlx#380](https://github.com/waybarrios/vllm-mlx/issues/380)). |
+
+Sizes are approximate (based on the safetensors shards on HuggingFace). Loaded-RAM is roughly the file size for 4-bit quants, slightly more for 8-bit.
+
+### Pre-download (skip the first-start wait)
+
+By default, `localclaude start <profile>` lazy-downloads weights on first use — that can be a 30 min wait on a 17 GB model, or hours on the 480B. Pre-download instead:
+
+```bash
+# Pip-install the HF CLI if you don't have it:
+pip install --user huggingface_hub[cli]    # or: brew install huggingface-cli
+
+# Download a specific profile's weights:
+huggingface-cli download mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit
+
+# Or use a custom cache:
+HF_HOME=/Volumes/MyExternalSSD/hf huggingface-cli download mlx-community/Qwen3.6-35B-A3B-4bit
+```
+
+### What's already cached?
+
+```bash
+localclaude list      # shows MLX models cached on this Mac
+```
+
+### Disk hygiene
+
+Weights are content-addressed by SHA, so re-downloading is cheap (just re-verifies). To reclaim disk, delete entire `models--<repo>--<name>/` directories under `~/.cache/huggingface/hub/`. Don't try to selectively delete shards — `huggingface_hub` will re-fetch the missing ones on next load.
+
 ## Daily flow
 
 ```bash
