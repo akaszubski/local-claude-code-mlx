@@ -90,11 +90,16 @@ After this, `localclaude` auto-resolves all sister paths from its own location â
 
 ```bash
 # Inference server â€” use the local checkout (carries optimizer + thinking-gate
-# patches that ship before they reach PyPI):
+# patches that ship before they reach PyPI). On macOS Python 3.12+ pip will
+# refuse the system install (PEP 668); add --break-system-packages or use a
+# venv if so. install.sh handles this automatically.
 cd vllm-mlx && pip install -e . && cd ..
+# (or if PEP 668 blocks):
+# cd vllm-mlx && pip install -e . --break-system-packages && cd ..
 
 # Claude Code CLI + OrbStack:
-brew install claude
+brew install --cask claude-code     # NOTE: `brew install claude` installs the
+                                    # macOS DESKTOP APP, not the CLI. Use --cask claude-code.
 brew install --cask orbstack
 orb start
 ```
@@ -148,7 +153,9 @@ By default, `localclaude start <profile>` lazy-downloads weights on first use â€
 
 ```bash
 # Pip-install the HF CLI if you don't have it:
-pip install --user huggingface_hub[cli]    # or: brew install huggingface-cli
+brew install huggingface-cli      # preferred on macOS (avoids PEP 668)
+# Or via pip if you prefer: pip install --user huggingface_hub[cli]
+# (or: pip install --break-system-packages huggingface_hub[cli] on Python 3.12+)
 
 # Download a specific profile's weights (uses HF_HUB_CACHE â†’ goes to ~/Models):
 huggingface-cli download mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit
@@ -276,7 +283,9 @@ By default, `localclaude start <profile>` lazy-downloads weights on first use â€
 
 ```bash
 # Pip-install the HF CLI if you don't have it:
-pip install --user huggingface_hub[cli]    # or: brew install huggingface-cli
+brew install huggingface-cli      # preferred on macOS (avoids PEP 668)
+# Or via pip if you prefer: pip install --user huggingface_hub[cli]
+# (or: pip install --break-system-packages huggingface_hub[cli] on Python 3.12+)
 
 # Download a specific profile's weights:
 huggingface-cli download mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit

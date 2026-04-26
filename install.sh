@@ -155,10 +155,11 @@ py_ok=$(python3 -c 'import sys; print(1 if sys.version_info >= (3, 10) else 0)')
 [[ "$py_ok" == "1" ]] || fatal "python3 $py_version too old (need 3.10+)"
 ok "python3 $py_version"
 
-# Required: claude CLI
+# Required: Claude Code CLI. The brew formula is `claude-code` (cask). Note
+# that `brew install claude` would install the macOS DESKTOP APP — wrong tool.
 if ! command -v claude >/dev/null 2>&1; then
-    warn "claude CLI missing -- installing via brew"
-    maybe "brew install claude"
+    warn "Claude Code CLI missing -- installing via brew (cask claude-code)"
+    maybe "brew install --cask claude-code"
 else
     ok "claude $(claude --version 2>&1 | head -1 | awk '{print $1}')"
 fi
