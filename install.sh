@@ -43,10 +43,14 @@ ask()     {
     [[ "$ans" =~ ^[Yy]$ ]]
 }
 maybe()   {  # echo + execute (or just echo in dry-run)
+    # Each caller passes a single shell-syntax string (so we can express
+    # subshells like `(cd … && …)`). Joining with $* keeps shellcheck happy
+    # on SC2294 — eval-ing $@ would negate the benefit of args arrays, but
+    # we genuinely want string-eval semantics here.
     if [[ "$DRY_RUN" == "1" ]]; then
         echo "    ${DIM}\$ $*${RESET}"
     else
-        eval "$@"
+        eval "$*"
     fi
 }
 
