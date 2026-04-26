@@ -142,6 +142,75 @@ localclaude stop          # kills server, prefix cache lost
 # Or just leave it running — keeps the prefix cache warm.
 ```
 
+## Benchmarks
+
+Measured on this stack across past sessions. Numbers are pulled from live server logs and the [`vllm-mlx/docs/benchmarks/`](https://github.com/akaszubski/vllm-mlx/tree/main/docs/benchmarks) reference suite. Anything that's a design target rather than a measurement is flagged.
+
+### Decode tokens/sec (single stream, small prompt)
+
+| Model | Quant | Hardware | Decode tok/s | TTFT (warm) |
+|---|---|---|---:|---:|
+| Qwen3-Coder-30B-A3B-Instruct (`coder` profile) | 4-bit | M4 Max 128 GB | **107–120** | ~70 ms |
+| Qwen3-30B-A3B-Instruct-2507 (`instruct`) | 4-bit | M4 Max 128 GB | **123–127** | ~127 ms |
+| Qwen3-Coder-480B-A35B (`coder-480`) | 4-bit | M3 Ultra 512 GB | **16–17** | (cold prefill is the killer — see below) |
+| Llama-3.2-3B-Instruct (reference) | 4-bit | M4 Max | 200 | 81 ms |
+| Qwen3-0.6B (reference) | 8-bit | M4 Max | 402 | 59 ms |
+| Nemotron-3-Nano-30B-A3B (reference) | 6-bit | M4 Max | 122 | 72 ms |
+
+### TTFT under real Claude Code traffic (the number that matters most for agent UX)
+
+| Model | Prompt size | Cache state | First-token latency |
+|---|---:|---|---:|
+| Qwen3-Coder-30B-A3B-4bit (M4 Max) | ~33 tok | warm cache | 70–400 ms |
+| Qwen3-Coder-30B-A3B-4bit (M4 Max) | 19,113 tok / 19,091 cached | prefix-cache **HIT** | **3.2 s** |
+| Qwen3-Coder-30B-A3B-4bit (M4 Max) | 4,694 new / 5K cached | partial hit | 5.2 s |
+| Qwen3-Coder-30B-A3B-4bit (M4 Max) | ~22K | **cold** (new project) | **30 s** |
+| Qwen3-Coder-480B-A35B-4bit (M3 Ultra) | 19,004 tok | cold | **95.8 s** |
+| Qwen3-Coder-480B-A35B-4bit (M3 Ultra) | 22,469 tok / 2,508 cached | mostly miss (project switch) | **117.4 s** |
+
+Takeaway: **prefix-cache hits drop TTFT by ~10×** on the 30B coder model (3.2 s vs 30 s). On the 480B model the cold-prefill penalty is so steep (~95–117 s) that the SSD-cache default and CLAUDE.md hygiene matter much more there than on smaller models.
+
+### Continuous batching wins (M4 Max, vllm-mlx benchmark suite)
+
+| Model | Single stream | 5-stream batch | Speedup |
+|---|---:|---:|---:|
+| Qwen3-30B-A3B-4bit | 98.1 tok/s | **233.3 tok/s** | 2.38× |
+| Llama-3.2-1B-Instruct-4bit | 299.1 | **613.0** | 2.05× |
+| Qwen3-0.6B-8bit | 328.1 | **1111.8** | 3.39× |
+
+Paged cache adds another ~1.1× on top of batching (681 → 766 tok/s, 20-req test).
+
+### Optimizer ON vs OFF (design target, not yet a controlled A/B)
+
+| Configuration | Tools sent | First-turn prefill (claim) |
+|---|---:|---:|
+| Default `code` allowlist (33 tools, stubs on) | 33 | **~3 s** |
+| All MCP tools, no allowlist (~277 tools) | 277 | **~50 s for ~80K tokens** |
+
+⚠ **Caveat**: This is the documented design target derived from token-count math + log observations on Qwen3-Coder-30B-A3B-4bit. It is **not yet a controlled paired-trial measurement** in the bench harness. The closest direct measurement is the 30 s cold prefill at 22 K tokens above (Section 2).
+
+### Cache configuration A/B (preliminary — small n)
+
+From `bench/runs/20260426-151203/`. Wall-clock for `claude --print` round-trips. Caveats: trial counts 1–5 per cell, C/D mostly errored on cases 03/04 (root cause: missing test fixture at run-time, since fixed). Treat as directional only.
+
+| Cond | Case | first-call wall (ms) | repeat wall (ms) |
+|---|---|---:|---:|
+| A (baseline) | 02_cc_list_files | 10,579–44,592 | 26,355 |
+| B (+`--warm-prompts`) | 02_cc_list_files | 11,133–25,160 | **11,184** |
+| C (+`--ssd-cache-dir`) | 02_cc_list_files | 46,767 | 27,699 |
+| D (+`--kv-cache-quantization`) | 02_cc_list_files | 30,424–46,817 | 27,919 |
+
+Cleanest signal: **`--warm-prompts` repeat wall 11.2 s vs baseline 26.4 s** (~2.4× faster), but n=1 — needs more trials to claim definitively. Re-run after the harness fix landed in `20260426-213941` confirmed C is functional and ~3× faster than baseline on `cc_explain_readme` (case 3) — see that summary file for details.
+
+### What we have NOT measured (be honest)
+
+- No controlled optimizer-on vs optimizer-off TTFT comparison in the bench harness (the 50 s vs 3 s claim is design target, not paired A/B).
+- No per-quantization sweep on the same model (e.g. 4-bit vs 8-bit Qwen3-Coder-30B on identical hardware).
+- No wired-memory / RSS time series for the leak in [`vllm-mlx#442`](https://github.com/waybarrios/vllm-mlx/issues/442) — only point-in-time KV-cache MB readings from scheduler logs.
+- No MTP (`--enable-mtp`) numbers on `coder-next` / `qwen36` profiles. Bench condition E is wired but the run hasn't been done yet.
+
+If you re-run the bench, results land in `bench/runs/<timestamp>/summary.md` and can be folded back into this section.
+
 ## Keep your CLAUDE.md files lean
 
 Claude Code embeds two CLAUDE.md files in **every** request's system prompt:
