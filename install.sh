@@ -195,13 +195,28 @@ clone_if_missing https://github.com/akaszubski/searxng-mcp.git "$SEARXNG_MCP_DIR
 echo
 step "4/8  Python dependencies"
 
-# vllm-mlx: install editable so the fork patches win + deps are pulled
+# vllm-mlx: install editable so the fork patches win + deps are pulled.
+# Modern Homebrew Python (3.12+) enforces PEP 668 — direct pip install to
+# system Python is blocked. Try plain first, fall back to --break-system-packages
+# with a warning. Users who care about Python hygiene should set up their own
+# venv before running this script (and `pip install -e ./vllm-mlx` inside it).
 if python3 -c "import vllm_mlx" 2>/dev/null && [[ "$(python3 -c 'import vllm_mlx, os; print(os.path.dirname(vllm_mlx.__file__))')" == "$VLLM_MLX_DIR/vllm_mlx" ]]; then
     ok "vllm-mlx already installed editable from $VLLM_MLX_DIR"
 else
     echo "  installing vllm-mlx editable from local source (this pulls deps and may take a few minutes)..."
-    maybe "python3 -m pip install --quiet -e '$VLLM_MLX_DIR'"
-    ok "vllm-mlx installed editable"
+    if [[ "$DRY_RUN" == "1" ]]; then
+        echo "    ${DIM}\$ python3 -m pip install --quiet -e '$VLLM_MLX_DIR'${RESET}"
+    elif python3 -m pip install --quiet -e "$VLLM_MLX_DIR" 2>/dev/null; then
+        ok "vllm-mlx installed editable (system pip)"
+    elif python3 -m pip install --quiet --break-system-packages -e "$VLLM_MLX_DIR" 2>/dev/null; then
+        warn "vllm-mlx installed with --break-system-packages (PEP 668 fallback)"
+        warn "   Consider creating a dedicated venv for cleaner Python hygiene."
+    else
+        err "vllm-mlx install failed. Try manually:"
+        echo "    cd $VLLM_MLX_DIR && python3 -m venv .venv && .venv/bin/pip install -e ."
+        echo "    Then add $VLLM_MLX_DIR/.venv/bin to your PATH."
+        exit 1
+    fi
 fi
 
 # searxng-mcp: dedicated venv for MCP runtime
