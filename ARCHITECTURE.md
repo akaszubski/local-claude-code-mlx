@@ -112,7 +112,14 @@ claude builds Anthropic /v1/messages POST:
   ▼
 vllm-mlx /v1/messages
   - Anthropic adapter normalises to internal request
-  - Optimizer drops/stubs tools (~98% reduction with `code` allowlist)
+  - PROMPT OPTIMIZER (fork patch, --optimize-prompts):
+      a. Tool allowlist — drop tools not on `--optimize-tool-allowlist`
+         (33 keep / 240+ drop with default `code` allowlist)
+      b. Tool stubs — replace verbose descriptions and JSON schemas with
+         short stubs (~195K chars → ~3.5K, 98% reduction)
+      c. Thinking gate — for tool-carrying requests, force
+         `enable_thinking=false` so reasoning models commit tool calls
+         instead of emitting <think> blocks
   - Prefix cache: longest-common-prefix lookup
        hit  → start decoding from cached suffix offset
        miss → SSD tier lookup → disk read or full prefill
@@ -126,6 +133,22 @@ claude renders the streamed response, dispatches tool calls
                               → HTTP to :8080 (SearXNG container)
   - Tool result returns as next /v1/messages turn
 ```
+
+## vllm-mlx fork patches
+
+`localclaude` runs the local source checkout because five fork-only patches change the practical performance ceiling for Claude Code on a local LLM. Without them, prefill of an 80K-token Claude Code request takes ~50s on M4 Max — effectively unusable. With them, the same request prefills in 3-5s.
+
+| Patch | Commit | Flag(s) | Default in `localclaude` | What it does |
+|---|---|---|---|---|
+| Anthropic /v1/messages prompt optimizer | `818f3fcb` | `--optimize-prompts` | **on** | Master switch. Enables the three transforms below before the request enters the inference engine. |
+| Tool allowlist | `818f3fcb` | `--optimize-tool-allowlist <csv>` | **on** (preset selectable: `minimal` / `code` / `all`) | Drops tool definitions whose names aren't on the allowlist. `code` preset = 33 tools (Claude Code natives + searxng MCP). `minimal` = 6. `all` = no filter. |
+| Tool description stubs | `818f3fcb` | `--optimize-stub-tools` | **on** | Replaces verbose tool descriptions and JSON schemas with short stubs. Combined with the allowlist: ~98% fewer prefill tokens. Deterministic so prefix cache hits cleanly. |
+| Auto-disable thinking on tool calls | `b680dc20` | (automatic) | **on** | Forces `enable_thinking=false` for any request carrying `tools`. Prevents reasoning models from emitting `<think>` blocks instead of committing tool calls. |
+| Stubs for 11 more Claude Code 2.x native tools | `ae25fb83` | (automatic) | **on** | Hand-tuned short stubs for `EnterWorktree`, `CronCreate`, `TaskCreate` etc. Without these the optimizer falls back to verbose schemas for those tools. |
+
+The prefix cache + SSD tier amplify these wins: optimizer transforms produce a deterministic prefix, and the cache reuses it across turns and across server restarts.
+
+These patches are intended to land upstream (`waybarrios/vllm-mlx`); until they do, `pip install vllm-mlx` won't have them and the local checkout is mandatory.
 
 ## The 3 (4) cache knobs
 
@@ -161,6 +184,15 @@ Why these defaults? See `CHANGELOG.md` for the full reasoning.
 | `[cache_persist] failed to save entry N: '_QuantizedCacheWrapper' object has no attribute 'state'` on shutdown | Known bug when `--kv-cache-quantization` is enabled | Don't combine `--kv-cache-quantization` with `--ssd-cache-dir` until upstream fix lands. Tracked as `waybarrios/vllm-mlx#443`. |
 | First prompt after `localclaude start` is slow (~30s) | Cold prefix cache (SSD tier didn't hit) | Use `--warm-prompts <seed.json>` for repeated workloads in the same project. |
 | `claude` says it can't find `mcp__searxng__*` | MCP not registered with Claude Code | `claude mcp add searxng -- $(pwd)/run.sh` from `searxng-mcp/`. |
+
+## Why we don't `pip install vllm-mlx`
+
+`localclaude` resolves `PYTHONPATH=$VLLM_MLX_DIR` ahead of any system-wide vllm-mlx so the fork's source wins. Two reasons:
+
+1. **The fork patches** (above) aren't on PyPI yet. Without them prefill is 10-20× slower.
+2. **We want to track upstream `main`.** The fork is rebased onto upstream regularly; running from source means a `git pull` in `vllm-mlx/` picks up upstream fixes immediately.
+
+The cost is one extra `pip install -e .` at setup time. The benefit is that you get the patches *and* upstream evolution.
 
 ## Why this layout instead of one repo?
 

@@ -29,6 +29,22 @@ Initial public release. Establishes the umbrella as its own git repo and consoli
 
 - **Harness now captures stdout on `claude --print` failures.** Previously only stderr was logged; non-zero `claude` exits typically have empty stderr and the actual error JSON on stdout. The earlier "empty C/D cells for cases 03/04" run was undiagnosable as a result. Now prints both, truncated, plus the `returncode`.
 
+### vllm-mlx fork patches (the actual reason this stack is fast)
+
+`localclaude` always runs the **local source checkout** of `vllm-mlx`, not the PyPI build. The fork (currently `akaszubski/vllm-mlx`, branched from `waybarrios/vllm-mlx`) carries five patches that aren't upstream yet. They turn ~50s prefill into ~3-5s prefill on an 80K-token Claude Code request — without them the local stack is barely usable.
+
+| Patch | Commit | Flag(s) | What it does |
+|---|---|---|---|
+| Anthropic /v1/messages prompt optimizer | `818f3fcb` | `--optimize-prompts` | Master switch for the optimizer. Off by default upstream; localclaude turns it on. |
+| Tool allowlist | `818f3fcb` | `--optimize-tool-allowlist <csv>` | Drops tool definitions whose names aren't on the list. The default `code` allowlist sends 33 tools (vs 274+ otherwise). |
+| Tool description stubs | `818f3fcb` | `--optimize-stub-tools` | Replaces verbose tool descriptions and JSON schemas with short stubs. Combined with the allowlist: ~98% prefill-token reduction (~195K chars → ~3.5K). |
+| Auto-disable thinking on tool calls | `b680dc20` | (automatic) | Forces `enable_thinking=false` for any request carrying `tools`. Lets reasoning models (Qwen3-Instruct, DeepSeek-R1) work as agents instead of emitting `<think>` blocks. |
+| Stubs for 11 more Claude Code 2.x native tools | `ae25fb83` | (automatic) | Hand-tuned short stubs for `EnterWorktree`, `CronCreate`, `TaskCreate`, etc. Claude Code 2.1+ adds these natively; without the patch the optimizer falls back to verbose schemas for them. |
+
+These patches are intended to land upstream eventually. Until they do, `pip install vllm-mlx` won't have them — that's why the umbrella README's setup says `cd vllm-mlx && pip install -e .` rather than `pip install vllm-mlx`.
+
+Documented in detail at [vllm-mlx/docs/guides/optimizer.md](https://github.com/akaszubski/vllm-mlx/blob/main/docs/guides/optimizer.md) (the fork).
+
 ### Decisions (with reasoning)
 
 #### SSD KV cache: **default-on**

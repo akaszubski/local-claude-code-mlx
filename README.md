@@ -10,7 +10,7 @@ keys, no rate limits.
 
 | Component | Repo | What it is |
 |---|---|---|
-| [`vllm-mlx/`](https://github.com/waybarrios/vllm-mlx) | upstream | The inference server. vLLM-style continuous batching + paged KV cache + prefix cache + SSD tiering on Metal. Exposes OpenAI `/v1/*` and Anthropic `/v1/messages` from one process. |
+| [`vllm-mlx/`](https://github.com/waybarrios/vllm-mlx) | upstream + fork | The inference server. vLLM-style continuous batching + paged KV cache + prefix cache + SSD tiering on Metal. Exposes OpenAI `/v1/*` and Anthropic `/v1/messages` from one process. **Use the local source checkout** — the fork carries the prompt optimizer, tool stubs, and thinking-gate patches that make local Claude actually fast (see "vllm-mlx fork patches" below). |
 | [`localclaude/`](https://github.com/akaszubski/localclaude) | own repo | Single-command lifecycle wrapper. Boots `vllm-mlx` with the right model + tool parser per profile, prints the `claude` connect command, manages stop/restart/status. Auto-starts the SearXNG container. |
 | [`searxng-mcp/`](https://github.com/akaszubski/searxng-mcp) | own repo | Tiny MCP server that gives Claude Code a `mcp__searxng__search` tool backed by a local SearXNG container. Replaces Anthropic's server-side `WebSearch` (which no-ops against local LLMs). |
 | [`bench/`](bench/) | this repo | A/B harness that measures wall-clock + TTFT under realistic Claude Code traffic across five cache configurations (baseline / `--warm-prompts` / `+--ssd-cache-dir` / `+--kv-cache-quantization` / `+--enable-mtp`). |
@@ -125,6 +125,33 @@ When done:
 localclaude stop          # kills server, prefix cache lost
 # Or just leave it running — keeps the prefix cache warm.
 ```
+
+## vllm-mlx fork patches (the reason this is fast)
+
+`localclaude` always runs the **local source checkout** of `vllm-mlx`, not the
+PyPI build. The fork (currently at `akaszubski/vllm-mlx`, branched off
+`waybarrios/vllm-mlx`) carries five patches that aren't upstream yet — and
+they're the difference between *barely usable* and *fast* local Claude:
+
+| Patch | Commit | Flag(s) | Why it matters |
+|---|---|---|---|
+| **Anthropic /v1/messages prompt optimizer** | `818f3fcb` | `--optimize-prompts` | Master switch for all the optimizer transforms below. Off by default upstream; `localclaude` enables it. |
+| **Tool allowlist** | `818f3fcb` | `--optimize-tool-allowlist <csv>` | Drops tool definitions whose names aren't on the list. Claude Code 2.x ships with 274+ tools (MCP servers + native); without an allowlist, every request carries ~100K tokens of tool schemas. The default `code` allowlist sends 33. |
+| **Tool description stubs** | `818f3fcb` | `--optimize-stub-tools` | Replaces verbose tool descriptions and JSON schemas with short stubs. Combined with the allowlist, ships ~3.5K chars vs ~195K — **~98% prefill reduction**. |
+| **Auto-disable thinking on tool calls** | `b680dc20` | (automatic) | Reasoning models like Qwen3-Instruct emit `<think>` blocks. For tool-using requests this means the model spends tokens reasoning instead of committing tool calls. The patch auto-disables `enable_thinking` when the request carries `tools`. Lets Qwen3-Coder + reasoning parser work as an agent. |
+| **11 more Claude Code 2.x native tool stubs** | `ae25fb83` | (automatic) | Hand-tuned short stubs for tools like `EnterWorktree`, `CronCreate`, `TaskCreate` etc. that Claude Code ships in 2.1+. Without these the optimizer falls back to verbose schemas for those tools. |
+
+Practical impact (M4 Max, `coder` profile, ~80K-token Claude Code request):
+
+| Configuration | First-prefill |
+|---|---|
+| Vanilla `vllm-mlx serve` (no optimizer) | ~50s |
+| With `--optimize-prompts --optimize-stub-tools` + `code` allowlist | ~3-5s |
+| Same + warm-prompts | <1s |
+
+This is why `localclaude` is mandatory if you want the local stack to feel like the cloud Claude. The fork patches are intended to land upstream; until they do, the local checkout is the way to get them.
+
+See [vllm-mlx/docs/guides/optimizer.md](https://github.com/akaszubski/vllm-mlx/blob/main/docs/guides/optimizer.md) in the fork for the full optimizer reference.
 
 ## Performance tuning
 
