@@ -4,14 +4,16 @@ Run **Claude Code** against a **local Qwen** model on Apple Silicon, with real
 web research and an A/B benchmark harness for cache tuning. No cloud, no API
 keys, no rate limits.
 
+**Read also**: [ARCHITECTURE.md](ARCHITECTURE.md) for technical layout and request flow · [CHANGELOG.md](CHANGELOG.md) for what's in this version and why.
+
 ## What's in this umbrella
 
-| Component | What it is |
-|---|---|
-| [`vllm-mlx/`](vllm-mlx/) | The inference server. vLLM-style continuous batching + paged KV cache + prefix cache + SSD tiering on Metal. Exposes OpenAI `/v1/*` and Anthropic `/v1/messages` from one process. |
-| [`localclaude/`](localclaude/) | Single-command lifecycle wrapper. Boots `vllm-mlx` with the right model + tool parser per profile, prints the `claude` connect command, manages stop/restart/status. |
-| [`searxng-mcp/`](searxng-mcp/) | Tiny MCP server that gives Claude Code a `mcp__searxng__search` tool backed by a local SearXNG container. Replaces Anthropic's server-side `WebSearch` (which no-ops against local LLMs). |
-| [`bench/`](bench/) | A/B harness that measures wall-clock + TTFT under realistic Claude Code traffic across four cache configurations (baseline / `--warm-prompts` / `+--ssd-cache-dir` / `+--kv-cache-quantization`). |
+| Component | Repo | What it is |
+|---|---|---|
+| [`vllm-mlx/`](https://github.com/waybarrios/vllm-mlx) | upstream | The inference server. vLLM-style continuous batching + paged KV cache + prefix cache + SSD tiering on Metal. Exposes OpenAI `/v1/*` and Anthropic `/v1/messages` from one process. |
+| [`localclaude/`](https://github.com/akaszubski/localclaude) | own repo | Single-command lifecycle wrapper. Boots `vllm-mlx` with the right model + tool parser per profile, prints the `claude` connect command, manages stop/restart/status. Auto-starts the SearXNG container. |
+| [`searxng-mcp/`](https://github.com/akaszubski/searxng-mcp) | own repo | Tiny MCP server that gives Claude Code a `mcp__searxng__search` tool backed by a local SearXNG container. Replaces Anthropic's server-side `WebSearch` (which no-ops against local LLMs). |
+| [`bench/`](bench/) | this repo | A/B harness that measures wall-clock + TTFT under realistic Claude Code traffic across five cache configurations (baseline / `--warm-prompts` / `+--ssd-cache-dir` / `+--kv-cache-quantization` / `+--enable-mtp`). |
 
 ```
         ┌──────────────┐         ┌────────────────────────┐
@@ -40,15 +42,27 @@ You only do this once per machine.
 
 ### 1. Hardware / OS prereqs
 
-- Apple Silicon Mac (M1+). Recommended ≥32 GB RAM for `coder` profile, ≥64 GB for `coder-next` 8-bit.
+- Apple Silicon Mac (M1+). Recommended ≥32 GB RAM for `coder` profile, ≥64 GB for `coder-next` 8-bit, ≥256 GB for `coder-480`.
 - macOS 14+.
 
-### 2. Install dependencies
+### 2. Clone the umbrella + sister repos
+
+The sister components are independent git repos — clone them as siblings of this umbrella:
 
 ```bash
-# Inference server (PyPI):
-pip install vllm-mlx
-# Or use the source checkout in this repo (carries optimizer + thinking-gate
+mkdir -p ~/Dev/local-claude-code-mlx && cd ~/Dev/local-claude-code-mlx
+git clone https://github.com/akaszubski/local-claude-code-mlx.git .
+git clone https://github.com/waybarrios/vllm-mlx.git
+git clone https://github.com/akaszubski/localclaude.git
+git clone https://github.com/akaszubski/searxng-mcp.git
+```
+
+After this, `localclaude` (the bash script) auto-resolves all sister paths from its own location — no env vars needed unless you've moved things.
+
+### 3. Install dependencies
+
+```bash
+# Inference server — use the local checkout (carries optimizer + thinking-gate
 # patches that ship before they reach PyPI):
 cd vllm-mlx && pip install -e . && cd ..
 
@@ -58,6 +72,7 @@ brew install claude   # or however you install it
 # OrbStack (provides docker engine for the SearXNG container — Docker Desktop
 # also works):
 brew install orbstack
+orb start    # ensure the engine is up
 ```
 
 ### 3. Bring up SearXNG (web search backend)
@@ -111,32 +126,40 @@ localclaude stop          # kills server, prefix cache lost
 # Or just leave it running — keeps the prefix cache warm.
 ```
 
-## Performance tuning (the 3 cache knobs)
+## Performance tuning
 
-`vllm-mlx` ships three cache optimizations that aren't on by default in
-`localclaude` profiles:
+`vllm-mlx` ships four cache / decode optimizations. Their default state in `localclaude` profiles:
 
-| Knob | Flag | What it buys you |
-|---|---|---|
-| Warm-prompts seeding | `--warm-prompts <seed.json>` | Removes the 30s "first prompt" prefill stall by pre-warming the prefix cache at startup |
-| SSD cache tiering | `--ssd-cache-dir <path>` | Persists prefix cache to disk; cold restarts reuse it |
-| 8-bit KV quantization | `--kv-cache-quantization --kv-cache-quantization-bits 8` | Halves KV memory pressure; lets the cache hold more context |
+| Knob | Flag | Default | What it buys you | Why this default |
+|---|---|---|---|---|
+| SSD cache tiering | `--ssd-cache-dir <path>` `--ssd-cache-max-gb <N>` | **on** (since 2026-04-26) | Persists prefix cache to disk; cold restarts reuse it (~3× speedup on repeat-call) | No measured downside; cap'd at 20 GB |
+| Warm-prompts seeding | `--warm-prompts <seed.json>` | opt-in | Removes the 30s "first prompt" prefill stall via a pre-warmed cache | Seed file is project-specific; no sensible default |
+| 8-bit KV quantization | `--kv-cache-quantization --kv-cache-quantization-bits 8` | opt-in | Halves KV memory pressure | **Bug**: incompatible with cache persistence ([waybarrios/vllm-mlx#443](https://github.com/waybarrios/vllm-mlx/issues/443)) — defeats SSD cache default if combined |
+| MTP (speculative decoding) | `--enable-mtp` | opt-in, profile-gated | 2-3× decode speed on supported models | Only applies to Qwen3-Next / Qwen3.5/3.6; auto-disabled on other models |
 
-Enable any/all of them via the bench escape hatch:
+See [CHANGELOG.md](CHANGELOG.md) for the reasoning behind each default.
+
+### Override the default + enable opt-ins
 
 ```bash
-LOCALCLAUDE_EXTRA_VLLM_ARGS="--ssd-cache-dir ~/.localclaude/ssd-cache --kv-cache-quantization --kv-cache-quantization-bits 8" \
+# Disable / relocate the SSD cache:
+LOCALCLAUDE_SSD_CACHE_DIR=off localclaude start coder
+LOCALCLAUDE_SSD_CACHE_MAX_GB=50 localclaude start coder
+
+# Enable opt-in knobs via the bench escape hatch:
+LOCALCLAUDE_EXTRA_VLLM_ARGS="--warm-prompts $(pwd)/bench/cases/seed.warm.json --enable-mtp" \
   localclaude start coder
 ```
 
-To benchmark them empirically before flipping defaults:
+### Benchmark before changing defaults
 
 ```bash
-bench/run.sh                # full A/B/C/D matrix
+bench/run.sh                # full A/B/C/D/E matrix
 bench/run.sh --smoke        # ~90s sanity
+bench/run.sh --conditions C,D --cases 3,4 --trials 2   # focused diagnostic
 ```
 
-See [`bench/README.md`](bench/README.md) for harness details.
+See [`bench/README.md`](bench/README.md) for harness details and how to capture a fresh `seed.warm.json` for your project.
 
 ## Path overrides
 

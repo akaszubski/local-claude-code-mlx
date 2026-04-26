@@ -9,7 +9,17 @@ import sys
 from pathlib import Path
 from typing import Any
 
-CAPTURE_SERVER = Path.home() / "Dev/local-claude-code-mlx/vllm-mlx/scripts/capture_server.py"
+# Resolve paths from this script's location so the umbrella folder can move.
+# Override via env vars if needed.
+_BENCH_DIR = Path(__file__).resolve().parent
+_WORKSPACE_DIR = _BENCH_DIR.parent
+CAPTURE_SERVER = Path(
+    os.environ.get(
+        "BENCH_CAPTURE_SERVER",
+        str(_WORKSPACE_DIR / "vllm-mlx" / "scripts" / "capture_server.py"),
+    )
+)
+DEFAULT_SEED_OUT = _BENCH_DIR / "cases" / "seed.warm.json"
 
 MIN_TOTAL_BYTES = 5000
 
@@ -72,7 +82,7 @@ def cmd_capture_start(args: argparse.Namespace) -> int:
     print()
     print("Send Ctrl-C to this proxy when the request has been captured, then run:")
     print(f"  python3 {sys.argv[0]} seed-from-capture --in {out_path} \\")
-    print("    --out /Users/akaszubski/Dev/local-claude-code-mlx/bench/cases/seed.warm.json")
+    print(f"    --out {DEFAULT_SEED_OUT}")
     print()
     os.execvp(
         sys.executable,
@@ -174,7 +184,7 @@ def build_parser() -> argparse.ArgumentParser:
     s1.add_argument("--port", type=int, default=8765)
     s1.add_argument(
         "--out",
-        default="/Users/akaszubski/Dev/local-claude-code-mlx/bench/cases/_capture/req.json",
+        default=str(_BENCH_DIR / "cases" / "_capture" / "req.json"),
     )
     s1.set_defaults(func=cmd_capture_start)
 
