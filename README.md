@@ -126,17 +126,7 @@ echo 'export PATH="'"$(pwd)"'/localclaude:$PATH"' >> ~/.zshrc && source ~/.zshrc
 
 ## Model storage
 
-**Recommended location: `~/Models/`** (set `HF_HUB_CACHE=$HOME/Models` in your shell rc).
-
-Why not the HuggingFace default (`~/.cache/huggingface/hub/`)?
-
-- `.cache/` is treated as evictable by some macOS tools (Storage cleanup, third-party "free up disk" utilities) — your 17 GB+ models can vanish.
-- A dedicated `~/Models/` directory is easier to back up, exclude from Time Machine, or symlink to an external SSD.
-- Cleaner separation between model weights (intentional 250+ GB) and other tool caches (transient).
-
-`localclaude` natively recognises both locations via `_is_model_cached()` (checks `$HOME/Models` first, falls back to `$HOME/.cache/huggingface/hub/`), so you don't need to migrate existing downloads — just point new ones at `~/Models/`.
-
-Set it once:
+**This stack uses `~/Models/` as the canonical HuggingFace cache** (not the upstream `~/.cache/huggingface/hub/` default). Set in your shell rc:
 
 ```bash
 mkdir -p ~/Models
@@ -144,11 +134,130 @@ echo 'export HF_HUB_CACHE="$HOME/Models"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
-To put models on an external SSD instead:
+After this, every `huggingface-cli download` and every implicit `from_pretrained()` writes to `~/Models/`. `localclaude` natively recognises this location via `_is_model_cached()` ([localclaude:342](https://github.com/akaszubski/localclaude/blob/main/localclaude#L342)) which checks `$HOME/Models` first and falls back to the upstream default for legacy installs.
+
+### Why not `~/.cache/huggingface/hub/`?
+
+- `.cache/` is treated as evictable by macOS Storage management and third-party "free up disk" utilities — your 17–250 GB models can vanish silently.
+- A dedicated `~/Models/` is easier to back up, exclude from Time Machine, symlink to an external SSD, or **NFS-mount across machines** (see below).
+- Clean separation: intentional model weights vs transient tool caches.
+
+### Pre-download (skip the first-start wait)
+
+By default, `localclaude start <profile>` lazy-downloads weights on first use — that can be a 30 min wait on a 17 GB model, hours on the 480B. Pre-download instead:
 
 ```bash
-echo 'export HF_HUB_CACHE="/Volumes/MyExternalSSD/Models"' >> ~/.zshrc
+# Pip-install the HF CLI if you don't have it:
+pip install --user huggingface_hub[cli]    # or: brew install huggingface-cli
+
+# Download a specific profile's weights (uses HF_HUB_CACHE → goes to ~/Models):
+huggingface-cli download mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit
+
+# Or temporarily route to an external SSD:
+HF_HUB_CACHE=/Volumes/MyExternalSSD/Models \
+  huggingface-cli download mlx-community/Qwen3.6-35B-A3B-4bit
 ```
+
+### What's already cached?
+
+```bash
+localclaude list      # shows MLX models cached under ~/Models or ~/.cache/huggingface/hub
+```
+
+### Migrating from `~/.cache/huggingface/hub/`
+
+Already have models cached at the upstream default? Move them to `~/Models/`:
+
+```bash
+# Move (no copy — instant):
+mv ~/.cache/huggingface/hub/models--* ~/Models/
+
+# Verify:
+localclaude list
+```
+
+`localclaude` reads from both paths so nothing breaks during the migration.
+
+### Disk hygiene
+
+Weights are content-addressed by SHA, so re-downloading is cheap (it just re-verifies). To reclaim disk, delete entire `models--<repo>--<name>/` directories under `~/Models/`. Don't try to selectively delete shards — `huggingface_hub` will re-fetch the missing ones on next load.
+
+## (Optional) Multi-Mac setups
+
+**Skip this section if you're running on a single Mac** — that's the default and everything below is opt-in. The stack works without any of it.
+
+The two reasons you'd want multi-Mac:
+
+1. **You have an M3 Ultra (or similar) with the RAM to run `coder-480` (~250 GB)** but you mostly work from a different Mac. Set `LOCALCLAUDE_CODER_480_REMOTE=user@m3-host` in your client Mac's shell rc; `localclaude start coder-480` from there will SSH-route to the M3 transparently.
+
+2. **You want to share model downloads across Macs** to avoid duplicating 17–250 GB per machine. NFS-mount `~/Models/` from one Mac onto the others.
+
+### Single-Mac users: no action needed
+
+- `LOCALCLAUDE_CODER_480_REMOTE` is unset → `coder-480` won't try to SSH anywhere. (It also won't fit on most Macs — only `coder` / `instruct` / `qwen36` / `gemma4` work on machines with <256 GB RAM.)
+- `~/Models/` is just a regular local directory.
+- You can ignore everything in this section.
+
+### NFS-share `~/Models` across machines
+
+```
+M3 Ultra (server)                  M4 Max (client)
+└─ /Users/<m3user>/Models/         └─ /Users/<m4user>/Models/   ← NFS mount of M3's path
+       (real filesystem)                  (mountpoint)
+```
+
+Both machines export `HF_HUB_CACHE=$HOME/Models`. `huggingface-cli download` on either Mac writes to the shared store. `localclaude start coder` on either Mac finds the cached weights immediately — no per-Mac re-download.
+
+Setup on the NFS *server* Mac (M3 Ultra in this example):
+
+```bash
+# /etc/exports — export ~/Models read/write to the trusted Mac
+echo "/Users/$(whoami)/Models -rw -mapall=$(whoami) -network 10.55.0.0 -mask 255.255.255.0" | sudo tee -a /etc/exports
+sudo nfsd update
+```
+
+Setup on the NFS *client* Mac (M4 in this example):
+
+```bash
+# autofs map (survives reboots; lazy-mounts on access)
+echo "/Users/$(whoami)/Models  -fstype=nfs,nodev,nosuid,noatime  10.55.0.2:/Users/<m3user>/Models" | sudo tee -a /etc/auto_master_local
+sudo automount -cv
+
+ls ~/Models | head    # should show the M3-side files
+```
+
+Replace `10.55.0.2` with your M3's mesh IP (Tailscale, Tailnet, or LAN). Replace `<m3user>` with the M3's username.
+
+### Multi-Mac compatibility checklist
+
+What's shared vs what's per-machine when you run this stack on more than one Mac:
+
+| Component | Per-machine | Shareable | Notes |
+|---|:---:|:---:|---|
+| Model weights (`~/Models/`) | | ✅ NFS | Same SHA-content; `localclaude` resolves identically. |
+| `vllm-mlx` Python install | ✅ | | Per-machine pip editable install (deps differ per Python). Run `./install.sh` on each Mac. |
+| `searxng-mcp` container | ✅ | | Each Mac needs its own `localclaude-searxng` container on `:8080`. |
+| `searxng-mcp/.venv` | ✅ | | Per-machine Python venv. |
+| `localclaude` script | | ✅ | Cloneable per-machine, OR symlink from NFS (`ln -s /Users/<m3user>/Dev/local-claude-code-mlx/localclaude/localclaude /usr/local/bin/localclaude`). The script uses `$HOME` consistently — same code works for any user. |
+| `~/.localclaude/.active`, `~/.localclaude/logs/` | ✅ | | Per-machine state — don't share. |
+| `~/.localclaude/ssd-cache/` | ✅ | | Per-machine SSD KV cache. Sharing via NFS would defeat the latency point. |
+| `LOCALCLAUDE_*` env vars (in `~/.zshrc`) | ✅ | | Set per machine. `LOCALCLAUDE_CODER_480_REMOTE` typically only set on the *client* Macs (the M3 itself doesn't need to SSH to itself). |
+
+Practical install order for a second Mac (assuming first Mac already set up):
+
+```bash
+# 1. Mount the existing ~/Models via NFS (see "Multi-Mac setup" above).
+# 2. Clone + install on the new Mac:
+git clone https://github.com/akaszubski/local-claude-code-mlx.git ~/Dev/local-claude-code-mlx
+cd ~/Dev/local-claude-code-mlx
+./install.sh
+# 3. Set HF_HUB_CACHE in this Mac's ~/.zshrc:
+echo 'export HF_HUB_CACHE="$HOME/Models"' >> ~/.zshrc
+# 4. (Optional, for client Macs) point coder-480 at the model server:
+echo 'export LOCALCLAUDE_CODER_480_REMOTE=user@m3-ip-or-host' >> ~/.zshrc
+```
+
+`./install.sh` will detect that `~/Models/` is already populated (via NFS) and skip the model-download wait entirely on the second Mac.
 
 | Profile | HF model | On-disk | Loaded RAM | Notes |
 |---|---|---:|---:|---|

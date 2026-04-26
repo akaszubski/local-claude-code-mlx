@@ -85,6 +85,28 @@ echo "${DIM}umbrella: $UMBRELLA${RESET}"
 [[ "$DRY_RUN" == "1" ]] && echo "${YELLOW}dry-run mode -- no changes will be made${RESET}"
 echo
 
+# Helper: check + suggest HF_HUB_CACHE
+_check_hf_hub_cache() {
+    local target="$HOME/Models"
+    mkdir -p "$target" 2>/dev/null
+    if [[ "${HF_HUB_CACHE:-}" == "$target" ]]; then
+        ok "HF_HUB_CACHE already set to $target"
+        return 0
+    fi
+    if [[ -n "${HF_HUB_CACHE:-}" ]]; then
+        warn "HF_HUB_CACHE is set to '$HF_HUB_CACHE' (this stack expects $target)"
+        warn "   Models will still be cached -- but localclaude's _is_model_cached"
+        warn "   check looks for \$HOME/Models. To use the canonical location:"
+        echo "     export HF_HUB_CACHE=\"\$HOME/Models\""
+        return 1
+    fi
+    warn "HF_HUB_CACHE is unset (HuggingFace will download to ~/.cache/huggingface/hub)"
+    warn "   This stack uses ~/Models as the canonical cache location. Add this"
+    warn "   to your ~/.zshrc (or shell rc) for cleaner storage + NFS-shareable cache:"
+    echo "     export HF_HUB_CACHE=\"\$HOME/Models\""
+    return 1
+}
+
 # ── 1. Pre-flight: macOS + Apple Silicon ────────────────────────────
 step "1/8  Pre-flight checks"
 
@@ -309,6 +331,11 @@ else
         echo "    claude mcp add searxng -- $SEARXNG_MCP_DIR/run.sh"
     fi
 fi
+
+# ── 6.5 HF_HUB_CACHE check (informational, does not auto-edit shell rc)
+echo
+step "6.5/8  HuggingFace model cache location"
+_check_hf_hub_cache || true
 
 # ── 7. Shell PATH ───────────────────────────────────────────────────
 echo
