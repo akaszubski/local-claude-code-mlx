@@ -1,4 +1,4 @@
-# Sister components are independent git repos — committed via their own
+# Sister components are independent git repos -- committed via their own
 # remotes, not vendored here. Add them as submodules later if/when we want
 # pinned coordination across machines.
 localclaude/
@@ -8,16 +8,49 @@ vllm-mlx/
 # Local logs and ad-hoc artefacts
 logs/
 *.log
+.localclaude/
+
+# Secrets and credentials -- never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+secrets.json
+credentials.json
+.secrets/
+.anthropic_api_key
+.claude_api_key
 
 # Editor / OS
 .DS_Store
+Thumbs.db
 *.swp
+*.swo
 .vscode/
 .idea/
+*.code-workspace
 
 # Python
 __pycache__/
 *.pyc
+*.pyo
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+.tox/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+.hypothesis/
+
+# Build / packaging
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Node (in case)
+node_modules/
