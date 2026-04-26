@@ -18,6 +18,28 @@ After it finishes, verify with: `localclaude doctor`.
 
 If the user wants the model to confidently route web-research requests to `mcp__searxng__*` (vs inferring it from a missing `WebSearch` tool), point them at the README's "Recommended `~/.claude/CLAUDE.md` snippet" section. **Do NOT auto-edit `~/.claude/CLAUDE.md`** — it's the user's persistent, all-projects file and they should review the snippet before adding it.
 
+## Model storage
+
+This stack uses **`~/Models/`** as the canonical HuggingFace cache, not the upstream `~/.cache/huggingface/hub/` default. The user sets `HF_HUB_CACHE=$HOME/Models` in their shell rc once. `localclaude` reads both locations (`_is_model_cached()` at `localclaude:342`) so legacy installs keep working during migration.
+
+When helping the user with model storage:
+
+- ✅ **Recommend `~/Models/`** as the cache location.
+- ✅ **Suggest setting `HF_HUB_CACHE=$HOME/Models`** in `~/.zshrc` if not already set.
+- ❌ **Do NOT automatically migrate** existing models from `~/.cache/huggingface/hub/` to `~/Models/` without showing the user the diff first (`mv` is fast but not free, and the user may have models in both places intentionally).
+- ❌ **Do NOT use `~/.cache/huggingface/hub/`** in install instructions.
+
+## Single-Mac vs multi-Mac
+
+The default install is **single-Mac**. Everything multi-Mac (NFS-shared `~/Models/`, `LOCALCLAUDE_CODER_480_REMOTE`, SSH dispatch for `coder-480`) is **opt-in**.
+
+When helping a user install or configure:
+
+- **Default to single-Mac behaviour** unless the user explicitly mentions a second Mac.
+- **Don't suggest NFS setup** unsolicited. It's documented in the README's "(Optional) Multi-Mac setups" section but not appropriate for a fresh install.
+- **`coder-480` profile**: only useful if the user has ≥256 GB of RAM (M3 Ultra-class) OR has a remote Mac that does. Don't suggest `coder-480` to a 16/32/64 GB Mac user — they should use `coder` (~17 GB), `coder-next` (~32 GB), or `qwen36` (~20 GB) instead.
+- **`LOCALCLAUDE_NO_REMOTE=1`**: tell the user about this if they're worried about accidental SSH egress from their Mac. It hard-disables remote dispatch.
+
 ## Do NOT
 
 - ❌ **Run `pip install vllm-mlx`** from PyPI. The required source is the [`akaszubski/vllm-mlx`](https://github.com/akaszubski/vllm-mlx) fork (not upstream `waybarrios/vllm-mlx`, not PyPI). The fork carries the prompt optimizer (`818f3fcb`), tool stubs (`ae25fb83`), and thinking-gate (`b680dc20`) patches. Without them, prefill of an 80K-token Claude Code request takes ~50 s instead of ~3 s — the local stack is unusable. The install script clones the fork and runs `pip install -e ./vllm-mlx`; don't override either part.

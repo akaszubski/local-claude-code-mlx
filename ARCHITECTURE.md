@@ -169,7 +169,8 @@ Why these defaults? See `CHANGELOG.md` for the full reasoning.
 | `~/.localclaude/logs/<profile>.log` | localclaude | Per-profile server stdout/stderr |
 | `~/.localclaude/ssd-cache/` | vllm-mlx | Persistent SSD KV-cache pages (when default-on; up to 20 GB) |
 | `~/.cache/vllm-mlx/prefix_cache/<model>/` | vllm-mlx | Lifespan-persisted prefix cache (in-memory snapshot on shutdown) |
-| `~/.cache/huggingface/hub/` | huggingface_hub | Model weights (`huggingface_hub` content-addressed by SHA) |
+| `~/Models/` | huggingface_hub (set `HF_HUB_CACHE=$HOME/Models`) | **Canonical** model-weights location for this stack. Single source of truth on each Mac; NFS-shareable across machines. |
+| `~/.cache/huggingface/hub/` | huggingface_hub (default if `HF_HUB_CACHE` unset) | Legacy fallback — `localclaude` reads it for backwards compatibility but new downloads should go to `~/Models/`. |
 | `~/.claude.json` | Claude Code | MCP server registrations (used by Claude to know about `mcp__searxng__*`) |
 | `<umbrella>/bench/runs/<ts>/` | bench/run.sh | A/B run artefacts (`raw.jsonl`, `summary.md`, per-condition server logs) |
 | `<umbrella>/searxng-mcp/searxng-config/settings.yml` | searxng-mcp | Bind-mounted into the SearXNG container as `/etc/searxng/settings.yml` |
@@ -207,6 +208,9 @@ For long-running `localclaude start` sessions:
 - Defaulting `--host 127.0.0.1` (loopback only).
 - Single-server invariant (kills any other process on `:8000`, prevents accidental rogue instances).
 - `-bind <host>` flag is opt-in and intended for trusted mesh networks (the `coder-480` profile uses it for cross-Mac SSH+tunnel — never for public networks).
+- `LOCALCLAUDE_CODER_480_REMOTE` empty by default — single-Mac users never see remote routing fire. Setting to `user@host` opts into multi-Mac SSH dispatch for the 480B profile only.
+- `LOCALCLAUDE_NO_REMOTE=1` is the explicit force-local-only escape hatch — disables remote dispatch even if the env var is set somewhere. Useful when sharing a `~/.zshrc` between Macs but you want one of them to be local-only.
+- `coder-480` profile bails clearly with a recovery menu if started on a Mac with <256 GB RAM and no remote configured (rather than silently OOM'ing).
 
 If you need LAN access, **also** pass `--api-key <secret>` via `LOCALCLAUDE_EXTRA_VLLM_ARGS`. Do not expose to the public internet under any configuration.
 

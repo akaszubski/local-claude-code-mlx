@@ -4,6 +4,53 @@ All notable changes to the **local-claude-code-mlx umbrella** (this repo, not th
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: dated, since this is an orchestration repo not a library.
 
+## [unreleased] — 2026-04-27 (later same day, post-public-release sweep)
+
+After the umbrella went public, the user audited what was missing for a clean fresh-install experience and what was over-promising in the docs. Net changes:
+
+### Added
+- **`install.sh`** at the umbrella root — Mac-only, idempotent, 8-phase one-shot install (deps, sister-repo clone, pip editable, OrbStack + SearXNG container, MCP registration, PATH wiring, `localclaude doctor`). Flags: `--yes` `--no-mcp` `--no-path` `--no-container` `--dry-run`.
+- **`AGENTS.md`** at the umbrella root — instructions for AI agents installing or modifying this stack. Names the four predictable agent traps (PyPI install, Linux/Intel, skip-container, improvise-deps) explicitly. Now also covers model-storage convention and single-Mac vs multi-Mac default.
+- **`.env.example`** — every umbrella-owned env var documented in one place.
+- **`.github/workflows/install-test.yml`** — runs `install.sh` on fresh `macos-14` + `macos-15` Apple Silicon runners on every push touching install.sh + on PRs + via manual dispatch. Catches PEP 668, UTF-8/locale, and missing-dep regressions on fresh Macs without the user touching their machine.
+- **Operational caveats section** in README — surfaces upstream issues users will hit: security posture (vllm-mlx#68), Metal memory leak (#442), broken `gemma4` profile (#380), `qwen` parser markdown drops (#431), MoE MTP load (#422).
+- **Recommended `~/.claude/CLAUDE.md` snippet section** — search-routing guidance so the model goes straight to `mcp__searxng__*` instead of inferring it from a missing `WebSearch` tool. Documented as nice-to-have, not strictly required (the optimizer's allowlist already removes WebSearch from the tool list).
+- **"Keep your CLAUDE.md files lean"** section — documents the cross-project cache-invalidation cost (~95–117 s cold prefill on Qwen3-Coder-480B per prior profiling) and gives a do/don't table.
+- **Benchmarks** section with explicit methodology callout — separates trustworthy upstream-suite numbers from anecdotal session-log captures, flags `coder-480` 16-17 tok/s as preliminary, lists "what we have NOT measured" honestly.
+- **Model storage** section with explicit `~/Models/` canonical convention and `HF_HUB_CACHE=$HOME/Models` setup snippet. NFS-share instructions for multi-Mac users in a clearly-labelled `(Optional)` subsection.
+- **Multi-Mac compatibility checklist** — what's per-machine vs shareable when running on M3 + M4 etc.
+
+### Fixed
+- **`install.sh`** clones `akaszubski/vllm-mlx` (the fork), not upstream `waybarrios/vllm-mlx`. The fork has the optimizer / tool-stub / thinking-gate patches that turn ~50 s prefill into ~3-5 s. Cloning upstream silently produces an unusable install.
+- **`install.sh`** handles PEP 668: tries plain `pip install -e .`, falls back to `--break-system-packages` with a warning, fails cleanly with venv recipe if both fail. Affects every fresh Mac with brew Python 3.12+.
+- **`install.sh`** uses ASCII output only (was UTF-8): bash on macos-15 with `set -u` parsed `$name…` (UTF-8 ellipsis) as `name…` and bailed with "unbound variable". Replaced 7 ellipses + 20 em-dashes with ASCII equivalents.
+- **`install.sh` — shellcheck**: SC2294 fix (`eval "$*"` not `eval "$@"`).
+
+### Changed (sister repos)
+- **`localclaude` script** ([0511358](https://github.com/akaszubski/localclaude/commit/0511358), [d586419](https://github.com/akaszubski/localclaude/commit/d586419)):
+  - Auto-starts OrbStack engine + SearXNG container (idempotent, never destructive).
+  - Default-on `--ssd-cache-dir ~/.localclaude/ssd-cache --ssd-cache-max-gb 20`. Override with `LOCALCLAUDE_SSD_CACHE_DIR=off`.
+  - Hardcoded SSH endpoint (`andrewkaszubski@10.55.0.2`) replaced with `LOCALCLAUDE_CODER_480_REMOTE` env var. Empty by default.
+  - `coder-480` profile bails clearly on Macs with <256 GB RAM and no remote configured (instead of silently OOM'ing during model load).
+  - New `LOCALCLAUDE_NO_REMOTE=1` escape hatch — force-local-only behaviour even if a remote is set.
+- **`searxng-mcp` README** ([e45ad97](https://github.com/akaszubski/searxng-mcp/commit/e45ad97)): fixed wrong `-allowlist all` advice (default `code` allowlist already includes `mcp__searxng__*`).
+- **`.gitignore` hardening** in all three repos: secrets / API keys / TLS keys / IDE files / OS junk + comments documenting the SearXNG default secret-key override path.
+
+### Privacy / cleanup
+- Repo-visibility flips: `akaszubski/localclaude` and `akaszubski/searxng-mcp` made **public** so install.sh's clone steps work for everyone (CI confirmed they were the install blocker).
+- PII sweep across all three sister repos: only finding was the hardcoded SSH endpoint in the `coder-480` profile (now env-driven). All other `~/`/IP/email patterns were either OWASP "A10" false positives or CIDR allowlist patterns.
+- User reclaimed **21 GB** on M4 by deleting 6 duplicate models from `~/.cache/huggingface/hub/` (all already on the NFS-mounted `~/Models/`).
+
+### Issues filed (recap)
+| Repo | # | Summary |
+|---|---|---|
+| akaszubski/autonomous-dev | [#977](https://github.com/akaszubski/autonomous-dev/issues/977) | scaffold-doctor — detect partial autonomous-dev installs |
+| akaszubski/autonomous-dev | [#978](https://github.com/akaszubski/autonomous-dev/issues/978) | fixture sanitizer — block CLAUDE.md / personal paths in fixtures |
+| akaszubski/autonomous-dev | [#979](https://github.com/akaszubski/autonomous-dev/issues/979) | audit-context — token-cost breakdown for captured Claude Code requests |
+| waybarrios/vllm-mlx | [#443](https://github.com/waybarrios/vllm-mlx/issues/443) | `--kv-cache-quantization` breaks prefix-cache persistence |
+
+---
+
 ## [unreleased] — 2026-04-27
 
 Initial public release. Establishes the umbrella as its own git repo and consolidates the work of the prior session.
