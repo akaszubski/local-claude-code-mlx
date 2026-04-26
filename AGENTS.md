@@ -16,6 +16,8 @@ That's it. The script is Mac-only (Apple Silicon), idempotent, and walks the use
 
 After it finishes, verify with: `localclaude doctor`.
 
+If the user wants the model to confidently route web-research requests to `mcp__searxng__*` (vs inferring it from a missing `WebSearch` tool), point them at the README's "Recommended `~/.claude/CLAUDE.md` snippet" section. **Do NOT auto-edit `~/.claude/CLAUDE.md`** — it's the user's persistent, all-projects file and they should review the snippet before adding it.
+
 ## Do NOT
 
 - ❌ **Run `pip install vllm-mlx`** from PyPI. The local checkout (`vllm-mlx/`) carries fork patches that aren't on PyPI yet — the prompt optimizer (`818f3fcb`), tool stubs, and thinking-gate. Without them, prefill of an 80K-token Claude Code request takes ~50 s instead of ~3 s. The install script handles `pip install -e ./vllm-mlx` correctly; don't override it.

@@ -211,6 +211,37 @@ Cleanest signal: **`--warm-prompts` repeat wall 11.2 s vs baseline 26.4 s** (~2.
 
 If you re-run the bench, results land in `bench/runs/<timestamp>/summary.md` and can be folded back into this section.
 
+## Recommended `~/.claude/CLAUDE.md` snippet (nice-to-have)
+
+**Strictly required?** No — localclaude's default `code` allowlist physically removes `WebSearch` and `WebFetch` from the tool list, so the model can't call them. Removed tools mean the model goes straight to `mcp__searxng__*` for web research.
+
+**Why add it anyway**: with explicit guidance in your global CLAUDE.md, the model picks `mcp__searxng__*` confidently on the first turn instead of inferring it from "the WebSearch tool seems to be missing." It also helps when you switch between local Claude (this stack) and cloud Claude (where WebSearch *does* exist) — the same guidance still routes correctly: WebSearch when available, MCP when not.
+
+Append to `~/.claude/CLAUDE.md`:
+
+```markdown
+## Tool selection — when to search the web vs the repo
+
+When the user asks for any of the following, prefer **`mcp__searxng__search`** (and `mcp__searxng__fetch` for full page content):
+
+- "research X", "look up X", "find online", "search the web", "search the internet"
+- Any question about **current versions**, **recent releases**, **latest docs**, **public APIs**, or **external benchmarks**
+- Any question that names a **GitHub repo, a vendor product, or a cloud service** that isn't in the current working directory
+- Any "what's new with X" / "is there a newer Y" question
+- Any question whose factual answer would not exist on this machine
+
+When the user asks for any of the following, prefer **`Glob`/`Read`/`Grep`/`Bash`**:
+
+- "explain this repo", "where is X defined", "find all callers of Y"
+- Any request whose answer is in the current working directory or a file the user has mentioned
+
+When in doubt and the request is ambiguous, ask once which scope they want — local repo or web.
+
+The `mcp__searxng__*` tools route to a local SearXNG container, so search is private and free; prefer them over `WebSearch`/`WebFetch` (which are no-ops when running against a local LLM server).
+```
+
+This is ~15 lines / ~700 chars. Counts toward the global CLAUDE.md token budget (see "Keep your CLAUDE.md files lean" below) but the perf cost is small for the routing benefit.
+
 ## Keep your CLAUDE.md files lean
 
 Claude Code embeds two CLAUDE.md files in **every** request's system prompt:

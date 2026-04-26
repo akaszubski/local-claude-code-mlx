@@ -348,3 +348,9 @@ echo
 echo "Read the umbrella README and ARCHITECTURE.md for performance tuning,"
 echo "the operational caveats (security posture, memory leak watchdog), and"
 echo "the bench harness for cache-config A/B testing."
+echo
+echo "${BOLD}Recommended (optional):${RESET} append the search-routing snippet to your"
+echo "global ~/.claude/CLAUDE.md so the model goes straight to mcp__searxng__*"
+echo "for web research. ~15 lines. See README.md → \"Recommended ~/.claude/CLAUDE.md"
+echo "snippet (nice-to-have)\". This script does NOT auto-edit your CLAUDE.md;"
+echo "that file is too important to mutate without you reading the snippet first."
