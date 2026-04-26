@@ -174,6 +174,44 @@ Why these defaults? See `CHANGELOG.md` for the full reasoning.
 | `<umbrella>/bench/runs/<ts>/` | bench/run.sh | A/B run artefacts (`raw.jsonl`, `summary.md`, per-condition server logs) |
 | `<umbrella>/searxng-mcp/searxng-config/settings.yml` | searxng-mcp | Bind-mounted into the SearXNG container as `/etc/searxng/settings.yml` |
 
+## Known constraints and upstream issues
+
+Things that affect how you should configure or operate the stack. All tracked upstream — see `README.md` "Operational caveats" for the user-facing summary; this section is the technical detail.
+
+### Combinations that don't work yet
+
+| Combination | Symptom | Tracked at |
+|---|---|---|
+| `--kv-cache-quantization` + cache persistence | 6/7 cache entries fail to save on shutdown (`'_QuantizedCacheWrapper' object has no attribute 'state'`) | [waybarrios/vllm-mlx#443](https://github.com/waybarrios/vllm-mlx/issues/443) |
+| Qwen 122B + SpecPrefill `--specprefill-keep-pct >= 0.3` at 64K+ context | Metal GPU command-buffer timeout | [waybarrios/vllm-mlx#454](https://github.com/waybarrios/vllm-mlx/issues/454) — caps the 256K-window model at 64K usable |
+| Reasoning models + `lm-format-enforcer` (structured output) | Mutually exclusive — workaround forces `enable_thinking=false` | [waybarrios/vllm-mlx#378](https://github.com/waybarrios/vllm-mlx/issues/378) |
+| `qwen` / `minimax` tool parsers with streaming markdown | Whitespace-only deltas dropped, layout collapses | [waybarrios/vllm-mlx#431](https://github.com/waybarrios/vllm-mlx/issues/431) — `qwen3_coder` parser unaffected |
+| MoE base + MTP sidecar weights from `add_mtp_weights_qwen35.py` | `dequantize` triggered on bare-key tensors → load fails | [waybarrios/vllm-mlx#422](https://github.com/waybarrios/vllm-mlx/issues/422) |
+
+### Sustained-traffic memory
+
+`vllm-mlx` (MLX backend) leaks Metal wired memory under sustained traffic — [waybarrios/vllm-mlx#442](https://github.com/waybarrios/vllm-mlx/issues/442). The leak accumulates in the GPU command-buffer pool, *not* in the Python heap, so `ps` / `top` / Activity Monitor's "Memory" column underreport actual usage. Eventually the process hits `kIOGPUCommandBufferCallbackErrorOutOfMemory` and dies.
+
+For long-running `localclaude start` sessions:
+
+- Periodically `localclaude restart` (the SSD cache + auto-restart container make this cheap — first prompt after restart hits the persisted prefix).
+- Monitor *wired* memory: `memory_pressure -Q` or `vm_stat | grep wired`.
+- Don't trust the `RSS` column for vllm-mlx process health.
+
+### Security posture
+
+`vllm-mlx` ships with no auth and historically defaulted to `0.0.0.0`. [waybarrios/vllm-mlx#68](https://github.com/waybarrios/vllm-mlx/issues/68) is the master tracker — covers `/v1/messages` auth bypass, SSRF in multimodal URL fetch, `trust_remote_code=True` defaults, MCP `skip_security_validation` bypass.
+
+`localclaude` mitigates by:
+
+- Defaulting `--host 127.0.0.1` (loopback only).
+- Single-server invariant (kills any other process on `:8000`, prevents accidental rogue instances).
+- `-bind <host>` flag is opt-in and intended for trusted mesh networks (the `coder-480` profile uses it for cross-Mac SSH+tunnel — never for public networks).
+
+If you need LAN access, **also** pass `--api-key <secret>` via `LOCALCLAUDE_EXTRA_VLLM_ARGS`. Do not expose to the public internet under any configuration.
+
+Related upstream PRs not yet merged: [`#345`](https://github.com/waybarrios/vllm-mlx/pull/345) (MCP config from CWD), [`#339`](https://github.com/waybarrios/vllm-mlx/pull/339) (`max_tokens` upper bound).
+
 ## Failure modes and recovery
 
 | Symptom | Likely cause | Recovery |

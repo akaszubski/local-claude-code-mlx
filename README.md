@@ -126,6 +126,20 @@ localclaude stop          # kills server, prefix cache lost
 # Or just leave it running — keeps the prefix cache warm.
 ```
 
+## ⚠ Operational caveats (read before exposing this beyond loopback)
+
+`localclaude` defaults to binding `127.0.0.1` for a reason. Surfaced from open upstream issues:
+
+| Issue | Risk | Mitigation |
+|---|---|---|
+| [`waybarrios/vllm-mlx#68`](https://github.com/waybarrios/vllm-mlx/issues/68) | `vllm-mlx` ships with no auth, vanilla `serve` defaults to `0.0.0.0`, and `/v1/messages` is open. ~25 vulns documented including SSRF in multimodal URL fetch and `trust_remote_code=True` defaults. | Keep `localclaude start` on its default `127.0.0.1` bind unless you understand the implications. If you need LAN access (e.g. M3 Ultra remote profile), pass `-bind <mesh-ip>` only on a trusted network and consider also setting `--api-key` via `LOCALCLAUDE_EXTRA_VLLM_ARGS`. **Do not expose to the public internet.** |
+| [`waybarrios/vllm-mlx#442`](https://github.com/waybarrios/vllm-mlx/issues/442) | **MLX wired/Metal memory grows unbounded under sustained traffic.** Python RSS underreports — `ps`/Activity Monitor won't catch it. Eventually `kIOGPUCommandBufferCallbackErrorOutOfMemory`. | Restart the server periodically on long-running sessions (`localclaude restart`). Watch *wired memory* (`memory_pressure`, `vm_stat`), not RSS. Symptom: gradually-rising responses, then a hard kill. |
+| [`waybarrios/vllm-mlx#380`](https://github.com/waybarrios/vllm-mlx/issues/380) | **Gemma 4 profile is currently broken** — multiple parser/template bugs cause nonsense output under continuous batching, plus stray `&lt;channel&#124;&gt;` tokens from the reasoning parser. | Don't use the `gemma4` profile until upstream fix lands. Stick with `coder` / `coder-next` / `qwen36`. |
+| [`waybarrios/vllm-mlx#431`](https://github.com/waybarrios/vllm-mlx/issues/431) | Streaming whitespace-only deltas dropped under the generic `qwen` and `minimax` tool parsers — markdown layout collapses mid-stream. The `qwen3_coder` parser is unaffected. | Affects `instruct` / `qwen36` profiles (which use `--tool-call-parser qwen`). Either accept the cosmetic glitch or wait for the imminent upstream fix. `coder` and `coder-next` use `qwen3_coder` and are unaffected. |
+| [`waybarrios/vllm-mlx#422`](https://github.com/waybarrios/vllm-mlx/issues/422) | MoE MTP load fails (`dequantize` triggered on bare-key tensors) — affects MTP weights generated for Qwen3.5/3.6 MoE targets via `add_mtp_weights_qwen35.py`. | If you generate MTP weights for `coder-next` / `qwen36`, apply the one-line patch from the issue thread or pin generation away from MoE targets until merged. |
+
+These are all upstream `waybarrios/vllm-mlx` issues; track them there for fix progress.
+
 ## vllm-mlx fork patches (the reason this is fast)
 
 `localclaude` always runs the **local source checkout** of `vllm-mlx`, not the
